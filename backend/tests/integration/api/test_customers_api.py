@@ -91,20 +91,33 @@ async def _record_sale(
     quantity: int,
     unit_price: str,
     currency: str = "USD",
+    payments: list[dict] | None = None,
 ) -> dict:
+    payload = {
+        "currency": currency,
+        "customer_id": customer_id,
+        "lines": [
+            {
+                "product_id": product_id,
+                "quantity": quantity,
+                "unit_price": unit_price,
+            }
+        ],
+    }
+
+    if payments is None:
+        payload["payments"] = [
+            {
+                "payment_method": "cash",
+                "amount": str(Decimal(unit_price) * quantity),
+            }
+        ]
+    else:
+        payload["payments"] = payments
+
     resp = await client.post(
         "/api/v1/sales",
-        json={
-            "currency": currency,
-            "customer_id": customer_id,
-            "lines": [
-                {
-                    "product_id": product_id,
-                    "quantity": quantity,
-                    "unit_price": unit_price,
-                }
-            ],
-        },
+        json=payload,
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 201, resp.text

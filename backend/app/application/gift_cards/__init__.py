@@ -1,0 +1,1 @@
+"""Gift cards application module."""

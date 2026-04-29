@@ -16,6 +16,7 @@ class ProductImportJobOut(BaseModel):
     errors: list[str]
     created_at: datetime
     updated_at: datetime
+    task_id: str | None = None  # Celery task ID for async tracking
 
     model_config = dict(from_attributes=True)
 

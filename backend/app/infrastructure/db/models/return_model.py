@@ -13,6 +13,7 @@ class ReturnModel(Base):
     __tablename__ = "returns"
 
     id: Mapped[str] = mapped_column(String(26), primary_key=True)
+    tenant_id: Mapped[str | None] = mapped_column(String(26), nullable=True, index=True)
     sale_id: Mapped[str] = mapped_column(
         String(26),
         ForeignKey("sales.id", ondelete="CASCADE"),

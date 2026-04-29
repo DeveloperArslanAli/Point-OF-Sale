@@ -6,6 +6,7 @@ from sqlalchemy import Select, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.core.tenant import get_current_tenant_id
 from app.domain.auth.entities import User, UserRole
 from app.infrastructure.db.models.auth.user_model import UserModel
 from app.shared.pagination import PageParams
@@ -15,9 +16,17 @@ class UserRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
 
+    def _apply_tenant_filter(self, stmt: Select[Any]) -> Select[Any]:
+        """Apply tenant filter if context is set."""
+        tenant_id = get_current_tenant_id()
+        if tenant_id:
+            return stmt.where(UserModel.tenant_id == tenant_id)
+        return stmt
+
     async def add(self, user: User) -> None:
         model = UserModel(
             id=user.id,
+            tenant_id=user.tenant_id or get_current_tenant_id(),
             email=user.email,
             password_hash=user.password_hash,
             role=user.role,
@@ -28,10 +37,10 @@ class UserRepository:
         )
         self._session.add(model)
         await self._session.flush()
-        # leave commit to caller (FastAPI dependency commits) but ensure object visible in same transaction
 
     async def get_by_email(self, email: str) -> User | None:
         stmt = select(UserModel).where(UserModel.email == email.lower())
+        # Note: email lookup doesn't filter by tenant for login purposes
         res = await self._session.execute(stmt)
         m = res.scalar_one_or_none()
         if m is None:
@@ -40,6 +49,7 @@ class UserRepository:
 
     async def get_by_id(self, user_id: str) -> User | None:
         stmt = select(UserModel).where(UserModel.id == user_id)
+        stmt = self._apply_tenant_filter(stmt)
         res = await self._session.execute(stmt)
         m = res.scalar_one_or_none()
         if m is None:
@@ -72,6 +82,13 @@ class UserRepository:
     ) -> tuple[list[User], int]:
         stmt = select(UserModel)
         count_stmt: Select[Any] = select(func.count(UserModel.id))
+        
+        # Apply tenant filter
+        stmt = self._apply_tenant_filter(stmt)
+        tenant_id = get_current_tenant_id()
+        if tenant_id:
+            count_stmt = count_stmt.where(UserModel.tenant_id == tenant_id)
+        
         conditions: list[ColumnElement[bool]] = []
         if email:
             conditions.append(UserModel.email.ilike(f"%{email.lower()}%"))
@@ -105,6 +122,7 @@ class UserRepository:
             password_hash=model.password_hash,
             role=UserRole(model.role),
             active=model.active,
+            tenant_id=model.tenant_id,
             created_at=model.created_at,
             updated_at=model.updated_at,
             version=model.version,

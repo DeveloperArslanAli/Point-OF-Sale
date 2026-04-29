@@ -1,14 +1,21 @@
+import json
+from pathlib import Path
+
 import flet as ft
 import jwt
+
 from views.login import LoginView
 from views.dashboard import DashboardView
 from views.pos import POSView
 from views.orders import OrdersView
 from views.inventory import InventoryView
+from views.intelligence import IntelligenceView
 from views.customers import CustomersView
 from views.employees import EmployeesView
 from views.users import UsersView
 from views.returns import ReturnsView
+from views.settings import SettingsView
+from views.promotions import PromotionsView
 from components.sidebar import Sidebar
 from services.api import api_service
 
@@ -23,18 +30,24 @@ class ModernPOSApp:
         self.current_route = None
         self.main_layout = None
         self.content_area = None
-        self.navigate("login")
+        self.token_store = Path(__file__).parent / ".auth_tokens.json"
+        if not self._restore_session():
+            self.navigate("login")
 
     def _setup_error_handling(self):
         def on_error(message):
-            self.page.show_snack_bar(
-                ft.SnackBar(
-                    content=ft.Text(message, color="white"),
-                    bgcolor="#cf6679",
-                    action="Dismiss",
-                    action_color="white"
+            try:
+                self.page.show_snack_bar(
+                    ft.SnackBar(
+                        content=ft.Text(message, color="white"),
+                        bgcolor="#cf6679",
+                        action="Dismiss",
+                        action_color="white"
+                    )
                 )
-            )
+            except Exception as exc:
+                # Fallback to console logging if the UI is not ready yet (e.g., during session restore)
+                print(f"UI error display failed: {exc}; original error: {message}")
         api_service.set_error_handler(on_error)
 
     def setup_page(self):
@@ -59,10 +72,25 @@ class ModernPOSApp:
             print(f"Error decoding token: {e}")
             self.user_role = "CASHIER"
 
+        self._persist_tokens()
+
         if self.user_role == "CASHIER":
             self.navigate("pos")
         else:
             self.navigate("dashboard")
+
+    def logout(self):
+        try:
+            api_service.logout()
+        except Exception:
+            pass
+        self.token = None
+        self.user_role = None
+        self.current_route = None
+        self.main_layout = None
+        self.content_area = None
+        self._clear_tokens()
+        self.navigate("login")
 
     def navigate(self, route):
         # Prevent redundant navigation
@@ -84,12 +112,7 @@ class ModernPOSApp:
             return
             
         if route == "logout":
-            self.token = None
-            self.user_role = None
-            self.current_route = None
-            self.main_layout = None
-            self.content_area = None
-            self.navigate("login")
+            self.logout()
             return
 
         # Authenticated Routes
@@ -126,6 +149,8 @@ class ModernPOSApp:
             content = OrdersView(self)
         elif route == "inventory":
             content = InventoryView(self)
+        elif route == "intelligence":
+            content = IntelligenceView(self)
         elif route == "customers":
             content = CustomersView(self)
         elif route == "employees":
@@ -134,6 +159,10 @@ class ModernPOSApp:
             content = UsersView(self)
         elif route == "returns":
             content = ReturnsView(self)
+        elif route == "settings":
+            content = SettingsView(self)
+        elif route == "promotions":
+            content = PromotionsView(self)
         else:
             content = ft.Container(alignment=ft.alignment.center, content=ft.Text(f"{route.capitalize()} Coming Soon", size=30))
 
@@ -147,8 +176,52 @@ class ModernPOSApp:
         
         self.page.update()
 
+    def _persist_tokens(self):
+        if not self.token:
+            return
+        data = {
+            "access_token": self.token,
+            "refresh_token": api_service.refresh_token,
+        }
+        try:
+            self.token_store.write_text(json.dumps(data))
+        except Exception as exc:
+            print(f"Warning: failed to persist tokens: {exc}")
+
+    def _clear_tokens(self):
+        try:
+            if self.token_store.exists():
+                self.token_store.unlink()
+        except Exception as exc:
+            print(f"Warning: failed to clear tokens: {exc}")
+
+    def _restore_session(self) -> bool:
+        if not self.token_store.exists():
+            return False
+        try:
+            data = json.loads(self.token_store.read_text())
+            access = data.get("access_token")
+            refresh = data.get("refresh_token")
+            if not access:
+                return False
+            api_service.set_tokens(access, refresh)
+            me = api_service.me()
+            if me and me.get("role"):
+                self.token = access
+                self.user_role = me.get("role")
+                self.navigate("pos" if self.user_role == "CASHIER" else "dashboard")
+                return True
+        except Exception as exc:
+            print(f"Session restore failed: {exc}")
+        self._clear_tokens()
+        return False
+
 def main(page: ft.Page):
     app = ModernPOSApp(page)
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    try:
+        # Run on port 8080 as requested
+        ft.app(target=main, port=8080)
+    except Exception as e:
+        print(f"Error starting app: {e}")

@@ -7,6 +7,7 @@ from sqlalchemy import case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.inventory.ports import InventoryMovementRepository
+from app.core.tenant import get_current_tenant_id
 from app.domain.inventory import InventoryMovement, MovementDirection, StockLevel
 from app.infrastructure.db.models.inventory_movement_model import InventoryMovementModel
 
@@ -15,7 +16,15 @@ class SqlAlchemyInventoryMovementRepository(InventoryMovementRepository):
     def __init__(self, session: AsyncSession):
         self._session = session
 
+    def _apply_tenant_filter(self, stmt):
+        """Apply tenant filter if context is set."""
+        tenant_id = get_current_tenant_id()
+        if tenant_id and hasattr(InventoryMovementModel, "tenant_id"):
+            return stmt.where(InventoryMovementModel.tenant_id == tenant_id)
+        return stmt
+
     async def add(self, movement: InventoryMovement) -> None:
+        tenant_id = get_current_tenant_id()
         model = InventoryMovementModel(
             id=movement.id,
             product_id=movement.product_id,
@@ -25,6 +34,7 @@ class SqlAlchemyInventoryMovementRepository(InventoryMovementRepository):
             reference=movement.reference,
             occurred_at=movement.occurred_at,
             created_at=movement.created_at,
+            tenant_id=tenant_id,
         )
         self._session.add(model)
         await self._session.flush()
@@ -47,10 +57,12 @@ class SqlAlchemyInventoryMovementRepository(InventoryMovementRepository):
             )
             .offset(offset)
         )
+        query = self._apply_tenant_filter(query)
         if limit is not None:
             query = query.limit(limit)
 
         count_query = select(func.count(InventoryMovementModel.id)).where(base_filter)
+        count_query = self._apply_tenant_filter(count_query)
 
         res = await self._session.execute(query)
         rows = res.scalars().all()
@@ -72,6 +84,7 @@ class SqlAlchemyInventoryMovementRepository(InventoryMovementRepository):
             func.coalesce(func.sum(delta_case), 0).label("total_delta"),
             func.max(InventoryMovementModel.occurred_at).label("last_occurred"),
         ).where(InventoryMovementModel.product_id == product_id)
+        stmt = self._apply_tenant_filter(stmt)
         if cutoff is not None:
             stmt = stmt.where(InventoryMovementModel.occurred_at <= cutoff)
         res = await self._session.execute(stmt)
@@ -115,6 +128,34 @@ class SqlAlchemyInventoryMovementRepository(InventoryMovementRepository):
         )
         res = await self._session.execute(stmt)
         return res.scalar_one_or_none()
+
+    async def get_outflow_since(self, product_id: str, since: datetime) -> int:
+        cutoff = _normalize_timestamp(since)
+        stmt = (
+            select(func.coalesce(func.sum(InventoryMovementModel.quantity), 0))
+            .where(InventoryMovementModel.product_id == product_id)
+            .where(InventoryMovementModel.direction == MovementDirection.OUT.value)
+            .where(InventoryMovementModel.occurred_at >= cutoff)
+        )
+        res = await self._session.execute(stmt)
+        total = res.scalar_one()
+        return int(total or 0)
+
+    async def get_outflows_since(self, since: datetime) -> dict[str, int]:
+        cutoff = _normalize_timestamp(since)
+        result = await self._session.execute(
+            select(
+                InventoryMovementModel.product_id,
+                func.sum(InventoryMovementModel.quantity).label("quantity"),
+            )
+            .where(
+                InventoryMovementModel.direction == MovementDirection.OUT.value,
+                InventoryMovementModel.occurred_at >= cutoff,
+            )
+            .group_by(InventoryMovementModel.product_id)
+        )
+        rows = result.all()
+        return {row.product_id: int(row.quantity or 0) for row in rows}
 
     def _to_entity(self, model: InventoryMovementModel) -> InventoryMovement:
         return InventoryMovement(

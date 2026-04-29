@@ -6,6 +6,8 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.customers.ports import CustomerRepository
+from app.core.encryption import decrypt_pii, encrypt_pii
+from app.core.tenant import get_current_tenant_id
 from app.domain.customers import Customer
 from app.infrastructure.db.models.customer_model import CustomerModel
 
@@ -14,29 +16,40 @@ class SqlAlchemyCustomerRepository(CustomerRepository):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    def _apply_tenant_filter(self, stmt):
+        """Apply tenant filter if context is set."""
+        tenant_id = get_current_tenant_id()
+        if tenant_id and hasattr(CustomerModel, "tenant_id"):
+            return stmt.where(CustomerModel.tenant_id == tenant_id)
+        return stmt
+
     async def add(self, customer: Customer) -> None:
+        tenant_id = get_current_tenant_id()
         model = CustomerModel(
             id=customer.id,
             first_name=customer.first_name,
             last_name=customer.last_name,
             email=customer.email,
-            phone=customer.phone,
+            phone=encrypt_pii(customer.phone),  # Encrypt PII
             active=customer.active,
             created_at=customer.created_at,
             updated_at=customer.updated_at,
             version=customer.version,
+            tenant_id=tenant_id,  # Set tenant from context
         )
         self._session.add(model)
         await self._session.flush()
 
     async def get_by_email(self, email: str) -> Customer | None:
         stmt = select(CustomerModel).where(CustomerModel.email == email.lower())
+        stmt = self._apply_tenant_filter(stmt)
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
         return self._to_entity(model) if model else None
 
     async def get_by_id(self, customer_id: str) -> Customer | None:
         stmt = select(CustomerModel).where(CustomerModel.id == customer_id)
+        stmt = self._apply_tenant_filter(stmt)
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
         return self._to_entity(model) if model else None
@@ -51,6 +64,10 @@ class SqlAlchemyCustomerRepository(CustomerRepository):
     ) -> tuple[Sequence[Customer], int]:
         stmt = select(CustomerModel)
         count_stmt = select(func.count(CustomerModel.id))
+        
+        # Apply tenant filter
+        stmt = self._apply_tenant_filter(stmt)
+        count_stmt = self._apply_tenant_filter(count_stmt)
 
         filters = []
         if search:
@@ -88,7 +105,7 @@ class SqlAlchemyCustomerRepository(CustomerRepository):
                 first_name=customer.first_name,
                 last_name=customer.last_name,
                 email=customer.email,
-                phone=customer.phone,
+                phone=encrypt_pii(customer.phone),  # Encrypt PII
                 active=customer.active,
                 updated_at=customer.updated_at,
                 version=customer.version,
@@ -105,7 +122,7 @@ class SqlAlchemyCustomerRepository(CustomerRepository):
             first_name=model.first_name,
             last_name=model.last_name,
             email=model.email,
-            phone=model.phone,
+            phone=decrypt_pii(model.phone),  # Decrypt PII
             active=model.active,
             created_at=model.created_at,
             updated_at=model.updated_at,

@@ -158,7 +158,7 @@ async def test_record_inventory_movement_validation_errors(async_session):
         )
         assert resp_missing_reason.status_code == 400
         payload = resp_missing_reason.json()
-        assert payload["code"] == "validation_error"
+        assert payload["code"] == "inventory.invalid_reason"
         assert payload["trace_id"] == resp_missing_reason.headers.get("X-Trace-Id")
 
 

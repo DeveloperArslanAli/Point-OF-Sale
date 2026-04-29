@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Sequence
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.api.schemas.inventory import InventoryMovementOut
 from app.domain.inventory import InventoryMovement
@@ -17,16 +17,45 @@ class SaleLineCreate(BaseModel):
     unit_price: Decimal = Field(gt=Decimal("0"))
 
 
+class SalePaymentCreate(BaseModel):
+    """Schema for creating a payment within a sale."""
+    payment_method: str = Field(min_length=1, description="Payment method (cash, card, gift_card, etc.)")
+    amount: Decimal = Field(gt=Decimal("0"), description="Payment amount")
+    reference_number: str | None = Field(default=None, description="Payment reference/transaction number")
+    card_last_four: str | None = Field(default=None, min_length=4, max_length=4, description="Last 4 digits of card")
+    gift_card_code: str | None = Field(
+        default=None,
+        min_length=15,
+        max_length=20,
+        description="Gift card code when using gift_card payment method",
+    )
+
+    @model_validator(mode="after")
+    def validate_gift_card(self: "SalePaymentCreate") -> "SalePaymentCreate":
+        if self.payment_method.lower() == "gift_card" and not self.gift_card_code:
+            raise ValueError("gift_card_code is required when payment_method is gift_card")
+        return self
+
+
 class SaleCreate(BaseModel):
     currency: str = Field(default="USD", min_length=3, max_length=3)
     lines: list[SaleLineCreate]
+    payments: list[SalePaymentCreate]
     customer_id: str | None = Field(default=None, min_length=1, max_length=26)
+    shift_id: str | None = Field(default=None, min_length=1, max_length=26)
 
     @field_validator("lines")
     @classmethod
     def ensure_lines_present(cls, value: list[SaleLineCreate]) -> list[SaleLineCreate]:
         if not value:
             raise ValueError("Sale requires at least one line")
+        return value
+
+    @field_validator("payments")
+    @classmethod
+    def ensure_payments_present(cls, value: list[SalePaymentCreate]) -> list[SalePaymentCreate]:
+        if not value:
+            raise ValueError("Sale requires at least one payment")
         return value
 
 
@@ -50,6 +79,30 @@ class SaleItemOut(BaseModel):
         )
 
 
+class SalePaymentOut(BaseModel):
+    """Schema for payment information in sale response."""
+    payment_method: str
+    amount: str
+    reference_number: str | None
+    card_last_four: str | None
+    gift_card_id: str | None
+    gift_card_code: str | None
+    created_at: datetime
+
+    @classmethod
+    def from_domain(cls, payment: "SalePayment") -> "SalePaymentOut":
+        from app.domain.sales.entities import SalePayment
+        return cls(
+            payment_method=payment.payment_method,
+            amount=str(payment.amount.amount),
+            reference_number=payment.reference_number,
+            card_last_four=payment.card_last_four,
+            gift_card_id=payment.gift_card_id,
+            gift_card_code=payment.gift_card_code,
+            created_at=payment.created_at,
+        )
+
+
 class SaleOut(BaseModel):
     id: str
     currency: str
@@ -58,7 +111,9 @@ class SaleOut(BaseModel):
     created_at: datetime
     closed_at: datetime | None
     items: list[SaleItemOut]
+    payments: list[SalePaymentOut]
     customer_id: str | None
+    shift_id: str | None
 
     @classmethod
     def from_domain(cls, sale: Sale, returned_quantities: dict[str, int] | None = None) -> SaleOut:
@@ -74,7 +129,9 @@ class SaleOut(BaseModel):
                 SaleItemOut.from_domain(item, returned_quantities.get(item.id, 0))
                 for item in sale.iter_items()
             ],
+            payments=[SalePaymentOut.from_domain(payment) for payment in sale.payments],
             customer_id=sale.customer_id,
+            shift_id=sale.shift_id,
         )
 
 

@@ -13,6 +13,7 @@ class ProductImportJobModel(Base):
     __tablename__ = "product_import_jobs"
 
     id: Mapped[str] = mapped_column(String(26), primary_key=True)
+    tenant_id: Mapped[str | None] = mapped_column(String(26), nullable=True, index=True)
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     total_rows: Mapped[int] = mapped_column(Integer, nullable=False)

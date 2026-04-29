@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from collections.abc import AsyncIterator
 from datetime import datetime
 from decimal import Decimal
@@ -38,6 +39,7 @@ from app.api.schemas.product_import import (
     ProductImportJobStatusOut,
 )
 from app.application.catalog.services.import_scheduler import ImmediateImportScheduler
+from app.infrastructure.adapters.celery_import_scheduler import CeleryImportScheduler
 from app.application.catalog.use_cases.create_product import (
     CreateProductInput,
     CreateProductUseCase,
@@ -70,12 +72,14 @@ from app.application.catalog.use_cases.process_product_import_job import (
 )
 from app.application.catalog.use_cases.queue_product_import import (
     QueueProductImportInput,
+    QueueProductImportResult,
     QueueProductImportUseCase,
 )
 from app.application.catalog.use_cases.retry_product_import_job import (
     RetryProductImportJobInput,
     RetryProductImportJobUseCase,
 )
+from app.core.settings import get_settings
 from app.application.catalog.use_cases.update_product import (
     UpdateProductInput,
     UpdateProductUseCase,
@@ -104,7 +108,31 @@ from app.infrastructure.db.repositories.product_import_repository import (
     SqlAlchemyProductImportJobRepository,
 )
 from app.infrastructure.db.session import get_session
+from app.infrastructure.websocket.handlers.inventory_handler import InventoryEventHandler
+from app.infrastructure.websocket.events import WebSocketEvent, EventType, PriceChangeEvent
+from app.infrastructure.websocket.event_dispatcher import get_event_dispatcher
 from app.shared.pagination import Page, PageParams
+
+settings = get_settings()
+
+
+def _use_celery_imports() -> bool:
+    override = os.getenv("USE_CELERY_IMPORTS")
+    if override is not None:
+        return override.lower() in {"1", "true", "yes", "on"}
+    return settings.ENV in {"staging", "prod"}
+
+
+def _build_import_scheduler(
+    job_repo: SqlAlchemyProductImportJobRepository,
+    product_repo: SqlAlchemyProductRepository,
+    category_repo: SqlAlchemyCategoryRepository,
+):
+    if _use_celery_imports():
+        return CeleryImportScheduler()
+    processor = ProcessProductImportJobUseCase(job_repo, product_repo, category_repo)
+    return ImmediateImportScheduler(processor)
+
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -155,7 +183,7 @@ async def update_product(
     payload: ProductUpdate,
     session: AsyncSession = Depends(get_session),
     cache: CacheService = Depends(get_cache_service),
-    _: User = Depends(require_roles(*MANAGEMENT_ROLES)),
+    current_user: User = Depends(require_roles(*MANAGEMENT_ROLES)),
 ) -> ProductOut:
     provided = _field_set(payload)
     update_fields = provided - {"expected_version"}
@@ -163,6 +191,12 @@ async def update_product(
         raise ValidationError("No update fields provided")
 
     repo = SqlAlchemyProductRepository(session)
+    
+    # Get old product for price change detection
+    old_product = await repo.get_by_id(product_id)
+    if not old_product:
+        raise ValidationError("Product not found")
+    
     use_case = UpdateProductUseCase(repo)
     product = await use_case.execute(
         UpdateProductInput(
@@ -176,6 +210,34 @@ async def update_product(
         )
     )
     await cache.clear_prefix("products:list")
+    
+    # Publish price change event if retail price changed
+    if "retail_price" in provided and payload.retail_price != old_product.price_retail.amount:
+        try:
+            dispatcher = get_event_dispatcher()
+            price_event = PriceChangeEvent(
+                product_id=str(product.id),
+                product_name=product.name,
+                old_price=old_product.price_retail.amount,
+                new_price=product.price_retail.amount,
+                changed_by=current_user.username,
+                reason="Manual update",
+            )
+            event = WebSocketEvent(
+                type=EventType.PRICE_CHANGED,
+                tenant_id=getattr(current_user, "tenant_id", "default"),
+                payload=price_event.model_dump(),
+            )
+            await dispatcher.publish_event(
+                event,
+                tenant_id=getattr(current_user, "tenant_id", "default"),
+            )
+        except Exception as e:
+            # Don't fail the request if event publishing fails
+            import structlog
+            logger = structlog.get_logger(__name__)
+            logger.error("price_change_event_failed", error=str(e))
+    
     return ProductOut(
         id=product.id,
         name=product.name,
@@ -294,11 +356,18 @@ async def queue_product_import(
     product_repo = SqlAlchemyProductRepository(session)
     category_repo = SqlAlchemyCategoryRepository(session)
     job_repo = SqlAlchemyProductImportJobRepository(session)
-    processor = ProcessProductImportJobUseCase(job_repo, product_repo, category_repo)
-    scheduler = ImmediateImportScheduler(processor)
+
+    scheduler = _build_import_scheduler(job_repo, product_repo, category_repo)
+
     use_case = QueueProductImportUseCase(job_repo, product_repo, category_repo, scheduler)
-    job = await use_case.execute(QueueProductImportInput(filename=file.filename or "import.csv", content=content))
-    return ProductImportJobOut.model_validate(job)
+    result: QueueProductImportResult = await use_case.execute(
+        QueueProductImportInput(filename=file.filename or "import.csv", content=content)
+    )
+    
+    # Build response with task_id for tracking
+    job_out = ProductImportJobOut.model_validate(result.job)
+    job_out.task_id = result.task_id
+    return job_out
 
 
 @router.post(
@@ -487,6 +556,18 @@ async def get_product_import_job_items(
         pages=result.pages,
     )
     return ProductImportJobDetailOut(**job_out.model_dump(), items=items_out, meta=meta_out)
+
+
+@router.get("/import/task/{task_id}", response_model=dict[str, Any], status_code=status.HTTP_200_OK)
+async def get_import_task_status(
+    task_id: str,
+    _: User = Depends(require_roles(*INVENTORY_ROLES)),
+) -> dict[str, Any]:
+    """Get the status of an async import task."""
+    if _use_celery_imports():
+        scheduler = CeleryImportScheduler()
+        return await scheduler.get_task_status(task_id)
+    return {"state": "disabled", "result": None, "error": "Celery tracking disabled in this environment"}
 
 
 @router.post("/import/{job_id}/retry", response_model=ProductImportJobOut, status_code=status.HTTP_202_ACCEPTED)

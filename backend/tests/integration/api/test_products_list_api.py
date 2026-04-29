@@ -14,28 +14,33 @@ from app.domain.auth.entities import UserRole
 from app.infrastructure.db.models.product_model import ProductModel
 from app.infrastructure.db.repositories.inventory_repository import SqlAlchemyProductRepository
 from app.infrastructure.db.session import AsyncSessionLocal
+from app.api.dependencies.cache import _memory_cache
 from tests.integration.api.helpers import create_user_and_login
 
 
 async def ensure_seed(target: int = 5):
+    # Invalidate product list cache so new seeds are visible during tests
+    await _memory_cache.clear_prefix("products:list")
     async with AsyncSessionLocal() as session:
-        # count existing
-        (existing_count,) = (await session.execute(select(func.count(ProductModel.id)))).one()
-        if existing_count >= target:
-            return
         repo = SqlAlchemyProductRepository(session)
         uc = CreateProductUseCase(repo)
-        start_index = existing_count + 1
-        for i in range(start_index, target + 1):
+        existing_skus = set((await session.execute(select(ProductModel.sku))).scalars())
+        created = False
+        for i in range(1, target + 1):
+            sku = f"SKU{i}"
+            if sku in existing_skus:
+                continue
             await uc.execute(
                 CreateProductInput(
                     name=f"Prod {i}",
-                    sku=f"SKU{i}",
+                    sku=sku,
                     retail_price=Decimal(str(10 + i)),
                     purchase_price=Decimal("5.00"),
                 )
             )
-        await session.commit()
+            created = True
+        if created:
+            await session.commit()
 
 
 async def create_custom_product(

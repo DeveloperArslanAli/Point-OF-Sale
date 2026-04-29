@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -76,6 +77,33 @@ async def _deactivate_customer(client: AsyncClient, token: str, customer: dict) 
     return resp.json()
 
 
+async def _purchase_and_activate_gift_card(
+    client: AsyncClient,
+    token: str,
+    *,
+    amount: str = "50.00",
+    currency: str = "USD",
+) -> dict:
+    purchase_resp = await client.post(
+        "/api/v1/gift-cards/purchase",
+        json={
+            "amount": amount,
+            "currency": currency,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert purchase_resp.status_code == 201, purchase_resp.text
+    gift_card = purchase_resp.json()
+
+    activate_resp = await client.post(
+        "/api/v1/gift-cards/activate",
+        json={"code": gift_card["code"]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert activate_resp.status_code == 200, activate_resp.text
+    return activate_resp.json()
+
+
 async def _record_sale(
     client: AsyncClient,
     token: str,
@@ -85,6 +113,7 @@ async def _record_sale(
     unit_price: str,
     currency: str = "USD",
     customer_id: str | None = None,
+    payments: list[dict] | None = None,
 ) -> dict:
     payload: dict[str, object] = {
         "currency": currency,
@@ -98,6 +127,17 @@ async def _record_sale(
     }
     if customer_id is not None:
         payload["customer_id"] = customer_id
+
+    if payments is None:
+        total_amount = Decimal(unit_price) * quantity
+        payload["payments"] = [
+            {
+                "payment_method": "cash",
+                "amount": str(total_amount),
+            }
+        ]
+    else:
+        payload["payments"] = payments
 
     resp = await client.post(
         "/api/v1/sales",
@@ -129,6 +169,12 @@ async def test_record_sale_decrements_inventory_and_returns_summary(async_sessio
                     "product_id": product["id"],
                     "quantity": 2,
                     "unit_price": "15.00",
+                }
+            ],
+            "payments": [
+                {
+                    "payment_method": "cash",
+                    "amount": "30.00",
                 }
             ],
         }
@@ -190,6 +236,12 @@ async def test_record_sale_with_customer_links_sale_to_customer(async_session):
                     "unit_price": "12.50",
                 }
             ],
+            "payments": [
+                {
+                    "payment_method": "cash",
+                    "amount": "12.50",
+                }
+            ],
         }
         resp = await client.post(
             "/api/v1/sales",
@@ -223,6 +275,12 @@ async def test_record_sale_rejects_unknown_customer(async_session):
                         "unit_price": "9.99",
                     }
                 ],
+                "payments": [
+                    {
+                        "payment_method": "cash",
+                        "amount": "9.99",
+                    }
+                ],
             },
             headers={"Authorization": f"Bearer {sales_token}"},
         )
@@ -253,6 +311,12 @@ async def test_record_sale_rejects_inactive_customer(async_session):
                         "unit_price": "9.99",
                     }
                 ],
+                "payments": [
+                    {
+                        "payment_method": "cash",
+                        "amount": "9.99",
+                    }
+                ],
             },
             headers={"Authorization": f"Bearer {sales_token}"},
         )
@@ -280,6 +344,12 @@ async def test_record_sale_insufficient_stock_returns_error(async_session):
                         "unit_price": "10.00",
                     }
                 ],
+                "payments": [
+                    {
+                        "payment_method": "cash",
+                        "amount": "50.00",
+                    }
+                ],
             },
             headers={"Authorization": f"Bearer {sales_token}"},
         )
@@ -303,7 +373,13 @@ async def test_record_sale_requires_existing_product(async_session):
                         "quantity": 1,
                         "unit_price": "12.00",
                     }
-                ]
+                ],
+                "payments": [
+                    {
+                        "payment_method": "cash",
+                        "amount": "12.00",
+                    }
+                ],
             },
             headers={"Authorization": f"Bearer {sales_token}"},
         )
@@ -367,6 +443,126 @@ async def test_list_sales_supports_filters(async_session):
         filtered = filter_resp.json()
         assert filtered["meta"]["total"] >= 1
         assert all(item["customer_id"] == customer["id"] for item in filtered["items"])
+
+
+@pytest.mark.asyncio
+async def test_record_sale_with_gift_card_payment_redeems_balance(async_session):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        sales_token, manager_token = await _login_sales_and_manager(async_session, client)
+        product = await _create_product(client, manager_token)
+        await _add_stock(client, manager_token, product["id"], quantity=5)
+
+        gift_card = await _purchase_and_activate_gift_card(
+            client,
+            manager_token,
+            amount="50.00",
+            currency="USD",
+        )
+
+        sale_total = Decimal("20.00")
+        sale_resp = await client.post(
+            "/api/v1/sales",
+            json={
+                "currency": "USD",
+                "lines": [
+                    {
+                        "product_id": product["id"],
+                        "quantity": 2,
+                        "unit_price": "10.00",
+                    }
+                ],
+                "payments": [
+                    {
+                        "payment_method": "gift_card",
+                        "amount": str(sale_total),
+                        "gift_card_code": gift_card["code"],
+                    }
+                ],
+            },
+            headers={"Authorization": f"Bearer {sales_token}"},
+        )
+        assert sale_resp.status_code == 201, sale_resp.text
+        sale_body = sale_resp.json()["sale"]
+        assert sale_body["total_amount"] == str(sale_total)
+        assert sale_body["payments"], "Expected payments in sale response"
+        payment = sale_body["payments"][0]
+        assert payment["payment_method"] == "gift_card"
+        assert payment["gift_card_id"] == gift_card["id"]
+        assert payment["gift_card_code"] == gift_card["code"]
+
+        balance_resp = await client.get(
+            f"/api/v1/gift-cards/{gift_card['code']}/balance",
+            headers={"Authorization": f"Bearer {manager_token}"},
+        )
+        assert balance_resp.status_code == 200, balance_resp.text
+        balance = balance_resp.json()
+        assert Decimal(str(balance["current_balance"])) == Decimal("30.00")
+        assert balance["is_usable"] is True
+
+
+@pytest.mark.asyncio
+async def test_record_sale_split_payment_gift_card_and_cash(async_session):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        sales_token, manager_token = await _login_sales_and_manager(async_session, client)
+        product = await _create_product(client, manager_token)
+        await _add_stock(client, manager_token, product["id"], quantity=4)
+
+        gift_card = await _purchase_and_activate_gift_card(
+            client,
+            manager_token,
+            amount="25.00",
+            currency="USD",
+        )
+
+        sale_resp = await client.post(
+            "/api/v1/sales",
+            json={
+                "currency": "USD",
+                "lines": [
+                    {
+                        "product_id": product["id"],
+                        "quantity": 2,
+                        "unit_price": "15.00",
+                    }
+                ],
+                "payments": [
+                    {
+                        "payment_method": "gift_card",
+                        "amount": "25.00",
+                        "gift_card_code": gift_card["code"],
+                    },
+                    {
+                        "payment_method": "cash",
+                        "amount": "5.00",
+                    },
+                ],
+            },
+            headers={"Authorization": f"Bearer {sales_token}"},
+        )
+        assert sale_resp.status_code == 201, sale_resp.text
+        sale = sale_resp.json()["sale"]
+
+        assert sale["total_amount"] == "30.00"
+        assert len(sale["payments"]) == 2
+
+        gc_payment = next(p for p in sale["payments"] if p["payment_method"] == "gift_card")
+        cash_payment = next(p for p in sale["payments"] if p["payment_method"] == "cash")
+
+        assert gc_payment["gift_card_id"] == gift_card["id"]
+        assert gc_payment["gift_card_code"] == gift_card["code"]
+        assert cash_payment["reference_number"] is None
+
+        balance_resp = await client.get(
+            f"/api/v1/gift-cards/{gift_card['code']}/balance",
+            headers={"Authorization": f"Bearer {manager_token}"},
+        )
+        assert balance_resp.status_code == 200, balance_resp.text
+        balance = balance_resp.json()
+        assert Decimal(str(balance["current_balance"])) == Decimal("0")
+        assert balance["status"] == "redeemed"
+        assert balance["is_usable"] is False
 
 
 @pytest.mark.asyncio

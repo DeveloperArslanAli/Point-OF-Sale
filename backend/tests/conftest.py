@@ -1,5 +1,7 @@
 import os
 import sys
+
+os.environ.setdefault("POS_DB_DISABLE_POOLING", "1")
 from typing import AsyncGenerator
 
 import pytest

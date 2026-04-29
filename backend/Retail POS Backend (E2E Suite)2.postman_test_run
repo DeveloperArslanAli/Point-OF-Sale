@@ -1,0 +1,266 @@
+{
+	"id": "700e032b-86bc-488f-8c5b-cebe171568e2",
+	"name": "Retail POS Backend (E2E Suite)",
+	"timestamp": "2025-12-18T20:51:30.566Z",
+	"collection_id": "33647433-4362bf86-1a08-45e5-be75-f36ce0daf1a5",
+	"folder_id": 0,
+	"environment_id": "33647433-695da605-ebd6-444b-85b6-a9473d14e88a",
+	"totalPass": 2,
+	"delay": 0,
+	"persist": true,
+	"status": "error",
+	"startedAt": "2025-12-18T20:51:29.103Z",
+	"totalFail": 10,
+	"results": [
+		{
+			"id": "38d14c1c-f260-41a0-81ac-82ba5c7a6fd2",
+			"name": "00 Auth / Login",
+			"url": "http://localhost:8010/api/v1/auth/login",
+			"time": 82,
+			"responseCode": {
+				"code": 200,
+				"name": "OK"
+			},
+			"tests": {
+				"Login returned 200": true,
+				"accessToken set": true
+			},
+			"testPassFailCounts": {
+				"Login returned 200": {
+					"pass": 1,
+					"fail": 0
+				},
+				"accessToken set": {
+					"pass": 1,
+					"fail": 0
+				}
+			},
+			"times": [
+				82
+			],
+			"allTests": [
+				{
+					"Login returned 200": true,
+					"accessToken set": true
+				}
+			]
+		},
+		{
+			"id": "3f8b03e8-dfb6-4ab9-8ca2-1611ebadd544",
+			"name": "Setup / Create Category (sets category_id)",
+			"url": "http://localhost:8010/api/v1/categories",
+			"time": 19,
+			"responseCode": {
+				"code": 500,
+				"name": "Internal Server Error"
+			},
+			"tests": {
+				"Status is 2xx": false,
+				"category_id set": false
+			},
+			"testPassFailCounts": {
+				"Status is 2xx": {
+					"pass": 0,
+					"fail": 1
+				},
+				"category_id set": {
+					"pass": 0,
+					"fail": 1
+				}
+			},
+			"times": [
+				19
+			],
+			"allTests": [
+				{
+					"Status is 2xx": false,
+					"category_id set": false
+				}
+			]
+		},
+		{
+			"id": "e6ff99d7-5aea-4197-b240-6e541da569cb",
+			"name": "Setup / Create Product (sets product_id)",
+			"url": "http://localhost:8010/api/v1/products",
+			"time": 20,
+			"responseCode": {
+				"code": 500,
+				"name": "Internal Server Error"
+			},
+			"tests": {
+				"Status is 2xx": false,
+				"product_id set": false
+			},
+			"testPassFailCounts": {
+				"Status is 2xx": {
+					"pass": 0,
+					"fail": 1
+				},
+				"product_id set": {
+					"pass": 0,
+					"fail": 1
+				}
+			},
+			"times": [
+				20
+			],
+			"allTests": [
+				{
+					"Status is 2xx": false,
+					"product_id set": false
+				}
+			]
+		},
+		{
+			"id": "04a50b2f-ad5c-42f8-adf1-90c11a07f464",
+			"name": "Setup / Create Customer (sets customer_id)",
+			"url": "http://localhost:8010/api/v1/customers",
+			"time": 21,
+			"responseCode": {
+				"code": 500,
+				"name": "Internal Server Error"
+			},
+			"tests": {
+				"Status is 2xx": false,
+				"customer_id set": false
+			},
+			"testPassFailCounts": {
+				"Status is 2xx": {
+					"pass": 0,
+					"fail": 1
+				},
+				"customer_id set": {
+					"pass": 0,
+					"fail": 1
+				}
+			},
+			"times": [
+				21
+			],
+			"allTests": [
+				{
+					"Status is 2xx": false,
+					"customer_id set": false
+				}
+			]
+		},
+		{
+			"id": "8f21b419-6743-421c-aa2e-ed356d87ccfc",
+			"name": "Setup / Create Supplier (sets supplier_id)",
+			"url": "http://localhost:8010/api/v1/suppliers",
+			"time": 21,
+			"responseCode": {
+				"code": 500,
+				"name": "Internal Server Error"
+			},
+			"tests": {
+				"Status is 2xx": false,
+				"supplier_id set": false
+			},
+			"testPassFailCounts": {
+				"Status is 2xx": {
+					"pass": 0,
+					"fail": 1
+				},
+				"supplier_id set": {
+					"pass": 0,
+					"fail": 1
+				}
+			},
+			"times": [
+				21
+			],
+			"allTests": [
+				{
+					"Status is 2xx": false,
+					"supplier_id set": false
+				}
+			]
+		},
+		{
+			"id": "3f0f2e27-c0d4-4051-bc89-88cd9c8a14fb",
+			"name": "Setup / Create Employee (sets employee_id)",
+			"url": "http://localhost:8010/api/v1/employees",
+			"time": 100,
+			"responseCode": {
+				"code": 500,
+				"name": "Internal Server Error"
+			},
+			"tests": {
+				"Status is 2xx": false,
+				"employee_id set": false
+			},
+			"testPassFailCounts": {
+				"Status is 2xx": {
+					"pass": 0,
+					"fail": 1
+				},
+				"employee_id set": {
+					"pass": 0,
+					"fail": 1
+				}
+			},
+			"times": [
+				100
+			],
+			"allTests": [
+				{
+					"Status is 2xx": false,
+					"employee_id set": false
+				}
+			]
+		},
+		{
+			"id": "aac3217c-1bb8-49b9-a3f4-a3a438b3764e",
+			"name": "Setup / Create Sale (sets sale_id + sale_item_id)",
+			"url": "http://localhost:8010/api/v1/sales",
+			"time": 6,
+			"responseCode": {
+				"code": 422,
+				"name": "Unprocessable Content"
+			},
+			"tests": {},
+			"testPassFailCounts": {},
+			"times": [
+				6
+			],
+			"allTests": [
+				{}
+			]
+		}
+	],
+	"count": 1,
+	"totalTime": 269,
+	"collection": {
+		"requests": [
+			{
+				"id": "38d14c1c-f260-41a0-81ac-82ba5c7a6fd2",
+				"method": "POST"
+			},
+			{
+				"id": "3f8b03e8-dfb6-4ab9-8ca2-1611ebadd544",
+				"method": "POST"
+			},
+			{
+				"id": "e6ff99d7-5aea-4197-b240-6e541da569cb",
+				"method": "POST"
+			},
+			{
+				"id": "04a50b2f-ad5c-42f8-adf1-90c11a07f464",
+				"method": "POST"
+			},
+			{
+				"id": "8f21b419-6743-421c-aa2e-ed356d87ccfc",
+				"method": "POST"
+			},
+			{
+				"id": "3f0f2e27-c0d4-4051-bc89-88cd9c8a14fb",
+				"method": "POST"
+			},
+			{
+				"id": "aac3217c-1bb8-49b9-a3f4-a3a438b3764e",
+				"method": "POST"
+			}
+		]
+	}
+}

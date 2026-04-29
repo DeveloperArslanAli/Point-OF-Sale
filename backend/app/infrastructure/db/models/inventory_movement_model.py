@@ -20,3 +20,4 @@ class InventoryMovementModel(Base):
     reference: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    tenant_id: Mapped[str | None] = mapped_column(String(26), nullable=True, index=True)

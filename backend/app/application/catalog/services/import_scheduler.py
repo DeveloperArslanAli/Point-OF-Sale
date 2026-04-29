@@ -34,3 +34,8 @@ class ImmediateImportScheduler(ImportScheduler):
         else:
             logger.info("product_import_job_processed", job_id=job.id)
             clear_contextvars()
+
+    async def schedule_import(self, job: ProductImportJob) -> str | None:
+        """Synchronous scheduler compatibility shim for Celery interface."""
+        await self.enqueue(job)
+        return None

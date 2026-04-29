@@ -1,0 +1,41 @@
+"""Observability infrastructure package."""
+
+from app.infrastructure.observability.metrics import (
+    PrometheusMiddleware,
+    metrics_endpoint,
+    record_cash_drawer_operation,
+    record_celery_task,
+    record_gift_card_issued,
+    record_gift_card_redeemed,
+    record_inventory_movement,
+    record_login,
+    record_return,
+    record_sale,
+    record_stock_alert,
+    set_active_sessions,
+    set_active_shifts,
+    set_celery_queue_depth,
+    set_db_connections,
+    set_websocket_connections,
+    setup_metrics,
+)
+
+__all__ = [
+    "PrometheusMiddleware",
+    "metrics_endpoint",
+    "record_cash_drawer_operation",
+    "record_celery_task",
+    "record_gift_card_issued",
+    "record_gift_card_redeemed",
+    "record_inventory_movement",
+    "record_login",
+    "record_return",
+    "record_sale",
+    "record_stock_alert",
+    "set_active_sessions",
+    "set_active_shifts",
+    "set_celery_queue_depth",
+    "set_db_connections",
+    "set_websocket_connections",
+    "setup_metrics",
+]

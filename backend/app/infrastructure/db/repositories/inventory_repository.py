@@ -10,6 +10,7 @@ from sqlalchemy.sql import Select
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.application.catalog.ports import ProductRepository
+from app.core.tenant import get_current_tenant_id
 from app.domain.catalog.entities import Product
 from app.domain.common.money import Money
 from app.infrastructure.db.models.product_model import ProductModel
@@ -19,7 +20,15 @@ class SqlAlchemyProductRepository(ProductRepository):
     def __init__(self, session: AsyncSession):
         self._session = session
 
+    def _apply_tenant_filter(self, stmt):
+        """Apply tenant filter if context is set."""
+        tenant_id = get_current_tenant_id()
+        if tenant_id and hasattr(ProductModel, "tenant_id"):
+            return stmt.where(ProductModel.tenant_id == tenant_id)
+        return stmt
+
     async def add(self, product: Product) -> None:
+        tenant_id = get_current_tenant_id()
         model = ProductModel(
             id=product.id,
             name=product.name,
@@ -29,17 +38,20 @@ class SqlAlchemyProductRepository(ProductRepository):
             category_id=product.category_id,
             active=product.active,
             version=product.version,
+            tenant_id=tenant_id,
         )
         self._session.add(model)
         await self._session.flush()
 
     async def get_by_sku(self, sku: str) -> Product | None:
         stmt = select(ProductModel).where(ProductModel.sku == sku)
+        stmt = self._apply_tenant_filter(stmt)
         model = await self._fetch_one(stmt)
         return self._to_entity(model)
 
     async def get_by_id(self, product_id: str, *, lock: bool = False) -> Product | None:
         stmt = select(ProductModel).where(ProductModel.id == product_id)
+        stmt = self._apply_tenant_filter(stmt)
         if lock:
             stmt = stmt.with_for_update()
         model = await self._fetch_one(stmt)
@@ -98,6 +110,11 @@ class SqlAlchemyProductRepository(ProductRepository):
     ) -> tuple[Sequence[Product], int]:
         stmt = select(ProductModel)
         count_stmt = select(func.count(ProductModel.id))
+        
+        # Apply tenant filter
+        stmt = self._apply_tenant_filter(stmt)
+        count_stmt = self._apply_tenant_filter(count_stmt)
+        
         filters: list[ColumnElement[bool]] = []
         if search:
             like = f"%{search.lower()}%"

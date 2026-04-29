@@ -24,6 +24,13 @@ class QueueProductImportInput:
     content: bytes
 
 
+@dataclass(slots=True)
+class QueueProductImportResult:
+    """Result of queueing a product import."""
+    job: ProductImportJob
+    task_id: str | None = None  # None for non-Celery schedulers
+
+
 class QueueProductImportUseCase:
     def __init__(
         self,
@@ -37,7 +44,7 @@ class QueueProductImportUseCase:
         self._category_repo = category_repo
         self._scheduler = scheduler
 
-    async def execute(self, data: QueueProductImportInput) -> ProductImportJob:
+    async def execute(self, data: QueueProductImportInput) -> QueueProductImportResult:
         rows = self._parse_rows(data)
         await self._validate_rows(rows)
 
@@ -45,9 +52,16 @@ class QueueProductImportUseCase:
         items = [ProductImportItem.create(job.id, idx + 1, row) for idx, row in enumerate(rows)]
 
         await self._job_repo.add_job(job, items)
-        await self._scheduler.enqueue(job)
+        
+        # Try to use new schedule_import method, fall back to enqueue for compatibility
+        task_id: str | None = None
+        if hasattr(self._scheduler, 'schedule_import'):
+            task_id = await self._scheduler.schedule_import(job)
+        else:
+            await self._scheduler.enqueue(job)
+        
         refreshed = await self._job_repo.get_job(job.id)
-        return refreshed or job
+        return QueueProductImportResult(job=refreshed or job, task_id=task_id)
 
     def _parse_rows(self, data: QueueProductImportInput) -> list[dict[str, str]]:
         try:

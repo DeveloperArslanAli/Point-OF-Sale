@@ -48,6 +48,12 @@ class RegisterRequest(BaseModel):
     password: str
 
 
+class CreateUserRequest(BaseModel):
+    email: EmailStr
+    password: str
+    role: UserRole = UserRole.CASHIER
+
+
 class UserOut(BaseModel):
     id: str
     email: EmailStr
@@ -160,6 +166,28 @@ async def _record_admin_action(
 async def register(req: RegisterRequest, session: AsyncSession = Depends(get_session)) -> UserOut:
     use_case = CreateUserUseCase(UserRepository(session), get_password_hasher())
     user = await use_case.execute(CreateUserInput(email=req.email, password=req.password))
+    return _user_to_out(user)
+
+
+@router.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+async def create_user(
+    payload: CreateUserRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    current_admin: User = Depends(require_roles(*ADMIN_ROLES)),
+) -> UserOut:
+    use_case = CreateUserUseCase(UserRepository(session), get_password_hasher())
+    user = await use_case.execute(
+        CreateUserInput(email=payload.email, password=payload.password, role=payload.role)
+    )
+    await _record_admin_action(
+        session,
+        actor_user_id=current_admin.id,
+        target_user_id=user.id,
+        action="user.create",
+        details={"role": payload.role.value},
+        trace_id=getattr(request.state, "trace_id", None),
+    )
     return _user_to_out(user)
 
 

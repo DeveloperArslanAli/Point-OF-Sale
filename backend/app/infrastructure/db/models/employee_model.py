@@ -23,6 +23,7 @@ class EmployeeModel(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    tenant_id: Mapped[str | None] = mapped_column(String(26), nullable=True, index=True)
 
     bonuses: Mapped[list[EmployeeBonusModel]] = relationship(back_populates="employee", cascade="all, delete-orphan")
     salary_history: Mapped[list[SalaryHistoryModel]] = relationship(back_populates="employee", cascade="all, delete-orphan")

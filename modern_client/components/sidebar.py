@@ -29,6 +29,7 @@ class Sidebar(ft.Container):
         
         if role in ["ADMIN", "MANAGER", "INVENTORY"]:
             items.append(self._build_nav_item(icons.INVENTORY, "Inventory", "inventory"))
+            items.append(self._build_nav_item(icons.ANALYTICS, "Intelligence", "intelligence"))
             
         items.append(self._build_nav_item(icons.PEOPLE, "Customers", "customers"))
         
@@ -37,6 +38,8 @@ class Sidebar(ft.Container):
 
         if role == "ADMIN":
             items.append(self._build_nav_item(icons.POINT_OF_SALE, "Cashiers", "users"))
+            items.append(self._build_nav_item(icons.CAMPAIGN, "Promotions", "promotions"))
+            items.append(self._build_nav_item(icons.SETTINGS, "Settings", "settings"))
             
         items.append(self._build_nav_item(icons.ASSIGNMENT_RETURN, "Returns", "returns"))
         

@@ -20,7 +20,7 @@ def upgrade() -> None:
         sa.Column("total_rows", sa.Integer(), nullable=False),
     sa.Column("processed_rows", sa.Integer(), nullable=False, server_default=sa.text("0")),
     sa.Column("error_count", sa.Integer(), nullable=False, server_default=sa.text("0")),
-    sa.Column("errors", sa.JSON(), nullable=False, server_default=sa.text("'[]'::json")),
+    sa.Column("errors", sa.JSON(), nullable=False, server_default=sa.text("'[]'")),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
     )

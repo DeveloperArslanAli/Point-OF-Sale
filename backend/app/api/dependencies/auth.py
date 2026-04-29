@@ -62,6 +62,7 @@ def require_roles(*roles: UserRole) -> Callable[..., Awaitable[User]]:
 
 ADMIN_ROLE: tuple[UserRole, ...] = (UserRole.ADMIN,)
 MANAGEMENT_ROLES: tuple[UserRole, ...] = (UserRole.ADMIN, UserRole.MANAGER)
+MANAGER_ROLES: tuple[UserRole, ...] = MANAGEMENT_ROLES  # Alias for consistency
 INVENTORY_ROLES: tuple[UserRole, ...] = (UserRole.ADMIN, UserRole.MANAGER, UserRole.INVENTORY)
 SALES_ROLES: tuple[UserRole, ...] = (UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER)
 RETURNS_ROLES: tuple[UserRole, ...] = SALES_ROLES

@@ -1,3 +1,4 @@
+print("Starting SuperAdmin Client...")
 import flet as ft
 from views.login import LoginView
 from views.dashboard import DashboardView
@@ -27,5 +28,10 @@ def main(page: ft.Page):
     app = SuperAdminApp(page)
 
 if __name__ == "__main__":
-    ft.app(target=main, port=8080, view=ft.AppView.WEB_BROWSER) 
-    # Running on port 8080 as requested, in web browser mode for "Portal" feel
+    try:
+        ft.app(target=main, port=8081, view=ft.AppView.WEB_BROWSER) 
+        # Running on port 8081 as requested, in web browser mode for "Portal" feel
+    except Exception as e:
+        print(f"Error starting app: {e}")
+        import traceback
+        traceback.print_exc()

@@ -33,21 +33,31 @@ class TokenProvider:
         payload, _ = self._build_access_payload(subject, extra)
         return jwt.encode(payload, self.secret, algorithm=self.algorithm)
 
-    def create_refresh_token(self, subject: str) -> str:
+    def create_refresh_token(self, subject: str, *, tenant_id: str | None = None) -> str:
         expire = datetime.now(tz=timezone.utc) + timedelta(minutes=self.refresh_minutes)
-        payload = {"sub": subject, "exp": expire, "type": "refresh", "iss": self.issuer}
+        payload: dict[str, Any] = {"sub": subject, "exp": expire, "type": "refresh", "iss": self.issuer}
+        if tenant_id:
+            payload["tenant_id"] = tenant_id
         return jwt.encode(payload, self.secret, algorithm=self.algorithm)
 
-    def create_refresh_token_with_id(self, subject: str, token_id: str | None = None) -> tuple[str, str, datetime]:
+    def create_refresh_token_with_id(
+        self,
+        subject: str,
+        *,
+        token_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> tuple[str, str, datetime]:
         jti = token_id or str(uuid4())
         expire = datetime.now(tz=timezone.utc) + timedelta(minutes=self.refresh_minutes)
-        payload = {
+        payload: dict[str, Any] = {
             "sub": subject,
             "exp": expire,
             "type": "refresh",
             "iss": self.issuer,
             "jti": jti,
         }
+        if tenant_id:
+            payload["tenant_id"] = tenant_id
         token = jwt.encode(payload, self.secret, algorithm=self.algorithm)
         return token, jti, expire
 

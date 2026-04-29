@@ -26,6 +26,7 @@ class User:
     password_hash: str
     role: UserRole
     active: bool
+    tenant_id: str | None
     created_at: datetime
     updated_at: datetime
     version: int = 0
@@ -33,7 +34,12 @@ class User:
     EMAIL_MAX: ClassVar[int] = 255
 
     @staticmethod
-    def create(email: str, password_hash: str, role: UserRole = UserRole.CASHIER) -> User:
+    def create(
+        email: str,
+        password_hash: str,
+        role: UserRole = UserRole.CASHIER,
+        tenant_id: str | None = None,
+    ) -> User:
         norm = User._normalize_email(email)
         if not password_hash or len(password_hash) < 10:  # argon2 hashes will be much longer
             raise ValidationError("Password hash invalid", code="user.invalid_password_hash")
@@ -43,6 +49,7 @@ class User:
             password_hash=password_hash,
             role=role,
             active=True,
+            tenant_id=tenant_id,
             created_at=datetime.now(UTC),
             updated_at=datetime.now(UTC),
         )

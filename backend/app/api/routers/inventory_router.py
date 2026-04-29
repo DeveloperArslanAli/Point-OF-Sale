@@ -17,6 +17,7 @@ from app.infrastructure.db.repositories.inventory_movement_repository import (
 )
 from app.infrastructure.db.repositories.inventory_repository import SqlAlchemyProductRepository
 from app.infrastructure.db.session import get_session
+from app.infrastructure.websocket.handlers.inventory_handler import InventoryEventHandler
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
@@ -26,7 +27,7 @@ async def record_movement(
     payload: InventoryMovementCreate,
     session: AsyncSession = Depends(get_session),
     cache: CacheService = Depends(get_cache_service),
-    _: User = Depends(require_roles(*INVENTORY_ROLES)),
+    current_user: User = Depends(require_roles(*INVENTORY_ROLES)),
 ) -> InventoryMovementRecordOut:
     product_repo = SqlAlchemyProductRepository(session)
     inventory_repo = SqlAlchemyInventoryMovementRepository(session)
@@ -43,6 +44,29 @@ async def record_movement(
         )
     )
     await cache.clear_prefix("products:list")
+    
+    # Get product details for event
+    product = await product_repo.get_by_id(product_id)
+    if product:
+        # Publish inventory updated event
+        await InventoryEventHandler.publish_inventory_updated(
+            product_id=product_id,
+            product_name=product.name,
+            sku=product.sku,
+            new_quantity=result.stock_level.quantity_on_hand,
+            tenant_id=getattr(current_user, "tenant_id", "default"),
+        )
+        
+        # Check and publish stock alerts (low stock, out of stock)
+        from decimal import Decimal
+        await InventoryEventHandler.check_and_publish_stock_alerts(
+            stock_level=result.stock_level,
+            product_name=product.name,
+            sku=product.sku,
+            low_stock_threshold=Decimal("10"),
+            tenant_id=getattr(current_user, "tenant_id", "default"),
+        )
+    
     return InventoryMovementRecordOut(
         movement=result.movement,
         stock=result.stock_level

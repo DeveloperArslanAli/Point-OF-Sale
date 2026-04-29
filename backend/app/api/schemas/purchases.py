@@ -94,3 +94,72 @@ class PurchasePageMetaOut(BaseModel):
 class PurchaseListOut(BaseModel):
     items: list[PurchaseOut]
     meta: PurchasePageMetaOut
+
+
+# =============================================================================
+# Receiving Schemas
+# =============================================================================
+
+class ReceivingLineCreate(BaseModel):
+    """Input for receiving a single line item."""
+    purchase_order_item_id: str = Field(min_length=1, max_length=26)
+    product_id: str = Field(min_length=1, max_length=26)
+    quantity_ordered: int = Field(ge=0)
+    quantity_received: int = Field(ge=0)
+    quantity_damaged: int = Field(default=0, ge=0)
+    exception_notes: str | None = Field(default=None, max_length=500)
+
+
+class ReceivePurchaseCreate(BaseModel):
+    """Input for receiving a purchase order."""
+    lines: list[ReceivingLineCreate]
+    notes: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("lines")
+    @classmethod
+    def ensure_lines_present(cls, value: list[ReceivingLineCreate]) -> list[ReceivingLineCreate]:
+        if not value:
+            raise ValueError("Receiving requires at least one line")
+        return value
+
+
+class ReceivingLineOut(BaseModel):
+    """Output for a receiving line item."""
+    id: str
+    purchase_order_item_id: str
+    product_id: str
+    quantity_ordered: int
+    quantity_received: int
+    quantity_damaged: int
+    quantity_accepted: int
+    exception_type: str | None
+    exception_notes: str | None
+    received_at: datetime | None
+
+
+class ReceivingOut(BaseModel):
+    """Output for a receiving record."""
+    id: str
+    purchase_order_id: str
+    status: str
+    received_at: datetime | None
+    created_at: datetime
+    received_by_user_id: str | None
+    notes: str | None
+    items: list[ReceivingLineOut]
+    
+    # Summary metrics
+    total_ordered: int
+    total_received: int
+    total_accepted: int
+    total_damaged: int
+    fill_rate: Decimal = Field(decimal_places=2)
+    has_exceptions: bool
+    exception_summary: dict[str, int]
+
+
+class ReceivingResultOut(BaseModel):
+    """Result of receiving a purchase order."""
+    receiving: ReceivingOut
+    movements: list[InventoryMovementOut]
+

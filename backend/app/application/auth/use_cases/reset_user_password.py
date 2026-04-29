@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.application.auth.ports import PasswordHasherPort, UserRepositoryPort
+from app.core.password_policy import validate_password
 from app.domain.auth.entities import User
 from app.domain.common.errors import ConflictError, NotFoundError, ValidationError
 
@@ -20,6 +21,15 @@ class ResetUserPasswordUseCase:
         self._hasher = hasher
 
     async def execute(self, data: ResetUserPasswordInput) -> User:
+        # Validate password policy
+        password_errors = validate_password(data.new_password)
+        if password_errors:
+            raise ValidationError(
+                "Password does not meet security requirements",
+                code="auth.weak_password",
+                details={"errors": password_errors},
+            )
+        
         user = await self._users.get_by_id(data.user_id)
         if user is None:
             raise NotFoundError("user not found")

@@ -1,0 +1,79 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: retail-pos-api
+  labels:
+    app: retail-pos-api
+    environment: production
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    # Rate limiting
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-connections: "50"
+    # Security headers (supplement to app middleware)
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      add_header X-Frame-Options "DENY" always;
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header X-XSS-Protection "1; mode=block" always;
+      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    # CORS (if needed at ingress level)
+    nginx.ingress.kubernetes.io/enable-cors: "false"
+    # WebSocket support
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$request_uri"
+    # TLS configuration
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.retailpos.example.com
+      secretName: retail-pos-tls
+  rules:
+    - host: api.retailpos.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: retail-pos-api
+                port:
+                  number: 80
+          # WebSocket endpoint for real-time updates
+          - path: /api/v1/ws
+            pathType: Prefix
+            backend:
+              service:
+                name: retail-pos-api
+                port:
+                  number: 80
+---
+# Ingress for metrics/monitoring (internal only)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: retail-pos-metrics
+  labels:
+    app: retail-pos-api
+    component: monitoring
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: metrics.retailpos.internal
+      http:
+        paths:
+          - path: /metrics
+            pathType: Prefix
+            backend:
+              service:
+                name: retail-pos-api
+                port:
+                  number: 80

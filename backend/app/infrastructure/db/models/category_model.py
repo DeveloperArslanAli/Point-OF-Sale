@@ -19,3 +19,4 @@ class CategoryModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     version: Mapped[int] = mapped_column(Integer, default=0)
+    tenant_id: Mapped[str | None] = mapped_column(String(26), nullable=True, index=True)

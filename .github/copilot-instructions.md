@@ -1,49 +1,42 @@
-# Retail POS AI Playbook
-## Project Surfaces
-- `backend/` serves the FastAPI + SQLAlchemy API; `desktop_client/` is a PySimpleGUI MVVM shell that speaks to it.
-- Poetry manages both projects; environment overrides come from `.env` / `.env.local` consumed by `app/core/settings.py`.
-- Default DB URL is async SQLite (`sqlite+aiosqlite:///./dev.db`); use `postgresql+asyncpg://` when targeting Postgres.
 
-## Backend Architecture
-- Layers: `app/domain` (entities/value objects + ULIDs), `app/application` (ports + use cases), `app/infrastructure` (SQLAlchemy/adapters), `app/api` (routers + DTOs).
-- Repository protocols live in `app/application/*/ports.py`; SQLAlchemy adapters sit in `app/infrastructure/db/repositories/*` and map to ORM models under `/models`.
-- Async session factory is defined in `app/infrastructure/db/session.py`; the FastAPI dependency commits or rolls back per request.
-- Structlog JSON logging is wired in `app/core/logging.py`; bind `trace_id` in request-scoped logs so downstream consumers stay correlated.
-- Domain exceptions inherit `DomainError` and are translated by `DomainErrorMiddleware` into JSON responses with trace IDs.
-- Pagination helpers (`app/shared/pagination.py`) provide the `meta` block expected by list endpoints.
+# Copilot instructions (Retail POS)
 
-## Domain Conventions
-- IDs are ULIDs (`app/domain/common/identifiers.py`); avoid incremental IDs in new code or migrations.
-- Monetary values flow through `Money` (Decimal rounding, no negatives) before persistence.
-- Aggregates often mix in `EventRecorderMixin`; pull events in use cases before handing them to future dispatchers.
-- Optimistic locking uses a `version` field mirrored between domain objects and SQLAlchemy models—increment it inside domain methods.
+## Big picture
+- This repo is a multi-app Python workspace:
+	- `backend/`: FastAPI + SQLAlchemy async + Alembic + Celery/Redis.
+	- `modern_client/`: Flet desktop POS client (currently mostly mocked).
+	- `super_admin_client/`: SuperAdmin portal (Python client scaffold).
 
-## API & Workflows
-- Keep `app/api/routers/*` handlers thin: resolve dependencies, call a use case, shape the response with Pydantic schema from `app/api/schemas/*`.
-- Catalog: product import use cases (`queue_`, `process_`, `retry_`, `get_*`) orchestrate `ProductImportJob` + `ProductImportItem`; preserve `errors` lists for desktop visibility.
-- Inventory + sales flows rely on `InventoryMovement` records so `StockLevel.from_movements` stays the single source of truth.
-- Returns and purchases reuse sales invariants; prefer extending shared domain logic over new bespoke aggregates.
-- Auth tokens come from `app/application/auth/use_cases`; Argon2 password hashing lives in `app/infrastructure/auth/password_hasher.py` and token issuing in `token_provider.py`.
+## Backend architecture (Clean Architecture)
+- Keep business rules in `backend/app/domain/` (no FastAPI/SQLAlchemy imports).
+- Put orchestration in `backend/app/application/` (use cases + ports). Prefer raising domain errors from `app.domain.common.errors`.
+- Keep HTTP concerns in `backend/app/api/` (routers/schemas/dependencies/middleware). Routers should instantiate repos + use-cases and map domain → schema (see `backend/app/api/routers/products_router.py`).
+- Implement ports in `backend/app/infrastructure/` (DB repos, tasks, websocket, external services).
 
-## Testing & Tooling
-- Boot backend with `cd backend; poetry install; poetry run uvicorn app.api.main:app --reload` (structlog prints JSON to stdout).
-- `tests/conftest.py` runs Alembic migrations once per session; async fixtures require `@pytest.mark.asyncio`.
-- Primary checks: `poetry run pytest`, `poetry run ruff check .`, `poetry run mypy .` (strict mode configured in `pyproject.toml`).
-- Integration suites under `tests/integration/api/` exercise routers against the async session; unit suites favour domain/service fakes.
-- New migrations belong in `alembic/versions`; keep script paths relative as shown in `alembic/env.py` so CI resolves correctly.
-- Full CI expectations live in `docs/ci-pipeline.md`; mirror those steps locally with `scripts/check_all.sh` before opening PRs.
+## Multi-tenancy & data isolation
+- Tenant is extracted from JWT by `TenantContextMiddleware` in `backend/app/core/tenant.py` (contextvars).
+- Repositories must filter by tenant_id when available (see `get_current_tenant_id()` usage in `backend/app/infrastructure/db/repositories/inventory_repository.py` and helpers in `backend/app/infrastructure/db/repositories/tenant_aware_base.py`).
 
-## Desktop Client
-- MVVM layout: views in `desktop_client/views/windows/`, view models in `desktop_client/view_models/`, API client in `desktop_client/core/api_client.py`.
-- Install with `py -m poetry install --no-root`; launch via `py -m poetry run python -m desktop_client.app` after the backend is up.
-- Login stores tokens then issues `/api/v1/products` fetches; align DTOs with backend schemas whenever fields shift.
+## Concurrency & optimistic locking
+- Aggregates use a `version` field; writes should require `expected_version` and update via `WHERE id=:id AND version=:expected_version` (see `SqlAlchemyProductRepository.update`).
 
-## Deployment & Ops
-- Docker image (`docker/Dockerfile`) installs Poetry; hook migrations in `docker/entrypoint.sh` before starting Uvicorn.
-- Structured logging + future tracing expect `trace_id` propagation—bind context when spawning background tasks or schedulers.
-- Track roadmap and cross-team agreements in `NEXT_STEPS.md`; update it when infra or sequencing assumptions change.
-- Postgres rollout steps live in `backend/docs/postgres-migration.md`; follow it when switching from the default SQLite DSN.
-- Logging & health expectations are documented in `docs/observability.md`; consult it before adding new background tasks or log formats.
-- Local Docker Compose stack (`docker-compose.dev.yml`) plus helper scripts under `scripts/` bring up backend + Postgres + Redis for dev; keep them in sync with manual setup docs when adjusting services or ports.
-- `.pre-commit-config.yaml` runs ruff, mypy, and the unit test subset via Poetry; keep parity with CI when adding new quality gates.
-- CI adds Bandit and pip-audit security scans; ensure new dependencies stay compatible and update exclusions as needed.
+## Real-time + background work
+- WebSocket events are broadcast via Redis pub/sub (`pos:events:{tenant_id}`) using `EventDispatcher` in `backend/app/infrastructure/websocket/event_dispatcher.py`.
+- Celery is configured in `backend/app/infrastructure/tasks/celery_app.py`; docker compose runs worker/beat/flower (`docker-compose.dev.yml`).
+
+## Config, logging, and security conventions
+- Settings come from `.env` / `.env.local` via `backend/app/core/settings.py`. In `staging`/`prod`, wildcards are rejected (e.g., `ALLOWED_HOSTS` cannot contain `*`).
+- Logging is JSON `structlog` with automatic PII masking (see `backend/app/core/logging.py`). Don’t log raw secrets/tokens/passwords.
+
+## Developer workflows (Windows-friendly)
+- Full dev stack (Postgres + Redis + API + Celery): `./scripts/dev_env_up.ps1` (uses `docker-compose.dev.yml`). Stop: `./scripts/dev_env_down.ps1`.
+- Run backend locally:
+	- `cd backend; py -m poetry install`
+	- `py -m poetry run uvicorn app.api.main:app --reload --port 8000`
+- DB bootstrap (migrations + admin user): `./scripts/db_bootstrap.ps1`.
+- Quality gate used by CI: `./scripts/check_all.ps1` (requires `DATABASE_URL`).
+
+## Testing & tooling
+- Backend tooling is strict: ruff (line length 120) + mypy strict in `backend/pyproject.toml` (tests/alembic are relaxed via overrides).
+- Tests are run from `backend/` with Poetry: `poetry run pytest` (typically requires Postgres configured via `DATABASE_URL`).
+

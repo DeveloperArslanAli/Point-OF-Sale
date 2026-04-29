@@ -61,8 +61,17 @@ class RefreshTokenUseCase:
         if user is None or not user.active:
             raise UnauthorizedError("invalid user")
 
-        access = self._tokens.create_access_token(subject=user.id, extra={"role": user.role})
-        new_refresh_value, new_refresh_id, new_refresh_exp = self._tokens.create_refresh_token_with_id(user.id)
+        access = self._tokens.create_access_token(
+            subject=user.id,
+            extra={
+                "role": user.role,
+                "tenant_id": user.tenant_id,
+            },
+        )
+        new_refresh_value, new_refresh_id, new_refresh_exp = self._tokens.create_refresh_token_with_id(
+            user.id,
+            tenant_id=user.tenant_id,
+        )
         replacement = RefreshToken.issue(user_id=user.id, expires_at=new_refresh_exp, token_id=new_refresh_id)
         await self._refresh_repo.revoke_and_replace(stored.id, replacement)
 

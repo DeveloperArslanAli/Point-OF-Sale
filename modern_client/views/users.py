@@ -74,52 +74,74 @@ class UsersView(ft.Container):
         self._render_table()
 
     def _open_add_cashier_dialog(self, e):
-        from datetime import datetime
-        
-        first_name = ft.TextField(label="First Name", bgcolor="#2d3033", color="white", border_color="#bb86fc", width=300)
-        last_name = ft.TextField(label="Last Name", bgcolor="#2d3033", color="white", border_color="#bb86fc", width=300)
-        email = ft.TextField(label="Email", bgcolor="#2d3033", color="white", border_color="#bb86fc", width=300)
-        password = ft.TextField(label="Password", password=True, can_reveal_password=True, bgcolor="#2d3033", color="white", border_color="#bb86fc", width=300)
-        
+        email = ft.TextField(label="Email", bgcolor="#2d3033", color="white", border_color="#bb86fc", width=320)
+        password = ft.TextField(label="Password", password=True, can_reveal_password=True, bgcolor="#2d3033", color="white", border_color="#bb86fc", width=320)
+        confirm_password = ft.TextField(label="Confirm Password", password=True, can_reveal_password=True, bgcolor="#2d3033", color="white", border_color="#bb86fc", width=320)
+
+        create_button = ft.ElevatedButton("Create", bgcolor="#bb86fc", color="black")
+
+        def set_loading(is_loading: bool) -> None:
+            create_button.disabled = is_loading
+            create_button.text = "Creating..." if is_loading else "Create"
+            create_button.update()
+
         def save(e):
-            if not all([first_name.value, last_name.value, email.value, password.value]):
+            if create_button.disabled:
+                return
+
+            if not all([email.value, password.value, confirm_password.value]):
                 self.page.show_snack_bar(ft.SnackBar(content=ft.Text("All fields are required")))
                 return
-                
+            if password.value != confirm_password.value:
+                self.page.show_snack_bar(ft.SnackBar(content=ft.Text("Passwords do not match")))
+                return
+            if len(password.value) < 8:
+                self.page.show_snack_bar(ft.SnackBar(content=ft.Text("Password must be at least 8 characters")))
+                return
+
+            email_value = email.value.strip()
+            if not email_value:
+                self.page.show_snack_bar(ft.SnackBar(content=ft.Text("Email is required")))
+                return
+            set_loading(True)
             data = {
-                "first_name": first_name.value,
-                "last_name": last_name.value,
-                "email": email.value,
-                "position": "Cashier",
-                "hire_date": datetime.now().strftime('%Y-%m-%d'),
-                "base_salary": 0, # Default or prompt?
-                "create_user_account": True,
+                "email": email_value,
                 "password": password.value,
                 "role": "CASHIER"
             }
-            
-            if api_service.create_employee(data):
-                self.page.show_snack_bar(ft.SnackBar(content=ft.Text("Cashier created successfully!")))
-                dlg.open = False
-                self._load_data()
-                self.page.update()
-            else:
-                self.page.show_snack_bar(ft.SnackBar(content=ft.Text("Error creating cashier")))
+
+            try:
+                if api_service.create_user(data):
+                    self.page.show_snack_bar(ft.SnackBar(content=ft.Text("Cashier created successfully!")))
+                    dlg.open = False
+                    self._load_data()
+                    self.page.update()
+                else:
+                    status = api_service.last_error_status
+                    error_text = api_service.last_error_message or "Error creating cashier"
+                    if status == 409:
+                        error_text = "User with this email already exists (409)"
+                    elif status == 400:
+                        error_text = "Check email and password requirements (400)"
+                    self.page.show_snack_bar(ft.SnackBar(content=ft.Text(error_text)))
+            finally:
+                set_loading(False)
 
         dlg = ft.AlertDialog(
             title=ft.Text("Add New Cashier"),
             content=ft.Column(
-                [first_name, last_name, email, password],
+                [email, password, confirm_password],
                 tight=True,
-                height=300,
-                width=350
+                height=260,
+                width=360
             ),
             actions=[
                 ft.TextButton("Cancel", on_click=lambda e: setattr(dlg, 'open', False)),
-                ft.ElevatedButton("Create", on_click=save, bgcolor="#bb86fc", color="black"),
+                create_button,
             ],
             bgcolor="#1a1c1e",
         )
+        create_button.on_click = save
         self.page.dialog = dlg
         dlg.open = True
         self.page.update()
@@ -203,11 +225,15 @@ class UsersView(ft.Container):
             else:
                 self.page.show_snack_bar(ft.SnackBar(content=ft.Text("Error resetting password")))
 
+        def close_dialog(_):
+            dlg.open = False
+            self.page.update()
+
         dlg = ft.AlertDialog(
             title=ft.Text(f"Reset Password for {user['email']}"),
             content=new_password,
             actions=[
-                ft.TextButton("Cancel", on_click=lambda e: setattr(dlg, 'open', False)),
+                ft.TextButton("Cancel", on_click=close_dialog),
                 ft.ElevatedButton("Reset", on_click=save, bgcolor="#cf6679", color="white"),
             ],
             bgcolor="#1a1c1e",

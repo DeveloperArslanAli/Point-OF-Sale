@@ -78,4 +78,25 @@ class ProductImportJobRepository(Protocol):
 
 
 class ImportScheduler(Protocol):
-    async def enqueue(self, job: ProductImportJob) -> None: ...  # pragma: no cover
+    """Schedules product import jobs for async processing."""
+    
+    async def enqueue(self, job: ProductImportJob) -> None:
+        """Legacy method for backward compatibility. Use schedule_import instead."""
+        ...  # pragma: no cover
+    
+    async def schedule_import(self, job: ProductImportJob) -> str:
+        """Schedule an import job and return the task ID for tracking."""
+        ...  # pragma: no cover
+    
+    async def get_task_status(self, task_id: str) -> dict[str, str | int | None]:
+        """
+        Get the status of an async task.
+        
+        Returns dict with keys: state, result, error
+        """
+        ...  # pragma: no cover
+    
+    async def cancel_task(self, task_id: str) -> bool:
+        """Cancel a running task. Returns True if successful."""
+        ...  # pragma: no cover
+

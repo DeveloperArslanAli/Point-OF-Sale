@@ -12,6 +12,9 @@ class EmployeeRepository(Protocol):
     async def get_by_id(self, employee_id: str) -> Employee | None:
         ...
 
+    async def get_by_email(self, email: str) -> Employee | None:
+        ...
+
     async def list(
         self,
         page: int = 1,

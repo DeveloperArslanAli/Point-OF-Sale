@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from uuid import uuid4
+from decimal import Decimal
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -57,19 +58,32 @@ async def _record_sale(
     product_id: str,
     quantity: int,
     unit_price: str = "12.00",
+    payments: list[dict] | None = None,
 ) -> dict:
+    payload = {
+        "currency": "USD",
+        "lines": [
+            {
+                "product_id": product_id,
+                "quantity": quantity,
+                "unit_price": unit_price,
+            }
+        ],
+    }
+
+    if payments is None:
+        payload["payments"] = [
+            {
+                "payment_method": "cash",
+                "amount": str(Decimal(unit_price) * quantity),
+            }
+        ]
+    else:
+        payload["payments"] = payments
+
     resp = await client.post(
         "/api/v1/sales",
-        json={
-            "currency": "USD",
-            "lines": [
-                {
-                    "product_id": product_id,
-                    "quantity": quantity,
-                    "unit_price": unit_price,
-                }
-            ],
-        },
+        json=payload,
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 201, resp.text

@@ -1,0 +1,135 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: retail-pos-celery-worker
+  labels:
+    app: retail-pos-celery
+    component: worker
+    environment: production
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: retail-pos-celery
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: retail-pos-celery
+        component: worker
+        environment: production
+    spec:
+      containers:
+        - name: celery-worker
+          image: ghcr.io/retail/pos-phython:latest
+          command: ["celery"]
+          args:
+            - "-A"
+            - "app.infrastructure.celery.worker:celery_app"
+            - "worker"
+            - "--loglevel=INFO"
+            - "--concurrency=4"
+          env:
+            - name: ENV
+              value: production
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: retail-pos-secrets
+                  key: database-url
+            - name: CELERY_BROKER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: retail-pos-secrets
+                  key: celery-broker-url
+            - name: CELERY_RESULT_BACKEND
+              valueFrom:
+                secretKeyRef:
+                  name: retail-pos-secrets
+                  key: celery-broker-url
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: retail-pos-celery-beat
+  labels:
+    app: retail-pos-celery
+    component: beat
+    environment: production
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: retail-pos-celery
+      component: beat
+  template:
+    metadata:
+      labels:
+        app: retail-pos-celery
+        component: beat
+        environment: production
+    spec:
+      containers:
+        - name: celery-beat
+          image: ghcr.io/retail/pos-phython:latest
+          command: ["celery"]
+          args:
+            - "-A"
+            - "app.infrastructure.celery.worker:celery_app"
+            - "beat"
+            - "--loglevel=INFO"
+          env:
+            - name: ENV
+              value: production
+            - name: CELERY_BROKER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: retail-pos-secrets
+                  key: celery-broker-url
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: retail-pos-celery-worker
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: retail-pos-celery-worker
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

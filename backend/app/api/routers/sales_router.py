@@ -15,8 +15,10 @@ from app.application.sales.use_cases.record_sale import (
     RecordSaleInput,
     RecordSaleUseCase,
     SaleLineInput,
+    SalePaymentInput,
 )
 from app.domain.auth.entities import User, UserRole
+from app.core.settings import get_settings
 from app.infrastructure.db.repositories.customer_repository import SqlAlchemyCustomerRepository
 from app.infrastructure.db.repositories.inventory_movement_repository import (
     SqlAlchemyInventoryMovementRepository,
@@ -24,9 +26,14 @@ from app.infrastructure.db.repositories.inventory_movement_repository import (
 from app.infrastructure.db.repositories.inventory_repository import SqlAlchemyProductRepository
 from app.infrastructure.db.repositories.sales_repository import SqlAlchemySalesRepository
 from app.infrastructure.db.repositories.returns_repository import SqlAlchemyReturnsRepository
+from app.infrastructure.db.repositories.gift_card_repository import SqlAlchemyGiftCardRepository
+from app.infrastructure.db.repositories.cash_drawer_repository import SqlAlchemyCashDrawerRepository
+from app.infrastructure.db.repositories.shift_repository import SqlAlchemyShiftRepository
 from app.infrastructure.db.session import get_session
+from app.infrastructure.websocket.handlers.sales_handler import SalesEventHandler
 
 router = APIRouter(prefix="/sales", tags=["sales"])
+settings = get_settings()
 
 
 @router.post("", response_model=SaleRecordOut, status_code=status.HTTP_201_CREATED)
@@ -34,17 +41,30 @@ async def record_sale(
     payload: SaleCreate,
     session: AsyncSession = Depends(get_session),
     cache: CacheService = Depends(get_cache_service),
-    _: User = Depends(require_roles(*SALES_ROLES)),
+    current_user: User = Depends(require_roles(*SALES_ROLES)),
 ) -> SaleRecordOut:
     product_repo = SqlAlchemyProductRepository(session)
     sales_repo = SqlAlchemySalesRepository(session)
     inventory_repo = SqlAlchemyInventoryMovementRepository(session)
     customer_repo = SqlAlchemyCustomerRepository(session)
-    use_case = RecordSaleUseCase(product_repo, sales_repo, inventory_repo, customer_repo)
+    gift_card_repo = SqlAlchemyGiftCardRepository(session)
+    shift_repo = SqlAlchemyShiftRepository(session)
+    drawer_repo = SqlAlchemyCashDrawerRepository(session)
+    use_case = RecordSaleUseCase(
+        product_repo,
+        sales_repo,
+        inventory_repo,
+        customer_repo,
+        gift_card_repo,
+        shift_repo=shift_repo,
+        drawer_repo=drawer_repo,
+        enforce_stock=settings.ENFORCE_STOCK_ON_SALE,
+    )
     result = await use_case.execute(
         RecordSaleInput(
             currency=payload.currency,
             customer_id=payload.customer_id,
+            shift_id=payload.shift_id,
             lines=[
                 SaleLineInput(
                     product_id=line.product_id,
@@ -53,9 +73,35 @@ async def record_sale(
                 )
                 for line in payload.lines
             ],
+            payments=[
+                SalePaymentInput(
+                    payment_method=payment.payment_method,
+                    amount=payment.amount,
+                    reference_number=payment.reference_number,
+                    card_last_four=payment.card_last_four,
+                    gift_card_code=payment.gift_card_code,
+                )
+                for payment in payload.payments
+            ],
         )
     )
     await cache.clear_prefix("products:list")
+    
+    # Publish real-time event
+    customer_name = None
+    if result.sale.customer_id:
+        customer = await customer_repo.get_by_id(str(result.sale.customer_id))
+        if customer:
+            customer_name = customer.full_name
+    
+    await SalesEventHandler.publish_sale_created(
+        sale=result.sale,
+        cashier_id=current_user.id,
+        cashier_name=current_user.email,
+        customer_name=customer_name,
+        tenant_id=getattr(current_user, "tenant_id", "default"),
+    )
+    
     return SaleRecordOut.build(result.sale, result.movements)
 
 

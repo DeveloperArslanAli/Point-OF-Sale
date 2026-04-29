@@ -12,7 +12,10 @@ A stylish, modern Point of Sale interface built with [Flet](https://flet.dev) (P
 
 1. **Install Dependencies**:
    ```bash
-   pip install poetry
+   
+
+
+
    poetry install
    ```
 

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.application.returns.ports import ReturnsRepository
+from app.core.tenant import get_current_tenant_id
 from app.domain.returns import Return, ReturnItem
 from app.domain.common.money import Money
 from app.infrastructure.db.models.return_model import ReturnItemModel, ReturnModel
@@ -18,13 +19,22 @@ class SqlAlchemyReturnsRepository(ReturnsRepository):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    def _apply_tenant_filter(self, stmt: Select[Any]) -> Select[Any]:
+        """Apply tenant filter if context is set."""
+        tenant_id = get_current_tenant_id()
+        if tenant_id:
+            return stmt.where(ReturnModel.tenant_id == tenant_id)
+        return stmt
+
     async def add_return(self, return_: Return, items: Sequence[ReturnItem]) -> None:
         if not items:
             raise ValueError("Return must include items to persist")
 
         created_at = return_.created_at
+        tenant_id = get_current_tenant_id()
         return_model = ReturnModel(
             id=return_.id,
+            tenant_id=tenant_id,
             sale_id=return_.sale_id,
             currency=return_.currency,
             total_amount=return_.total_amount.amount,
@@ -64,6 +74,7 @@ class SqlAlchemyReturnsRepository(ReturnsRepository):
             .options(selectinload(ReturnModel.items))
             .where(ReturnModel.id == return_id)
         )
+        stmt = self._apply_tenant_filter(stmt)
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
         if model is None:
@@ -85,6 +96,12 @@ class SqlAlchemyReturnsRepository(ReturnsRepository):
             .order_by(ReturnModel.created_at.desc())
         )
         count_stmt = select(func.count(ReturnModel.id))
+        
+        # Apply tenant filter
+        stmt = self._apply_tenant_filter(stmt)
+        tenant_id = get_current_tenant_id()
+        if tenant_id:
+            count_stmt = count_stmt.where(ReturnModel.tenant_id == tenant_id)
 
         if sale_id is not None:
             stmt = stmt.where(ReturnModel.sale_id == sale_id)

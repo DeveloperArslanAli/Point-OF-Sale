@@ -5,21 +5,32 @@ class DomainError(Exception):
     status_code: int = 400
     error_code: str = "domain_error"
 
-    def __init__(self, message: str, *, status_code: int | None = None, error_code: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        error_code: str | None = None,
+        details: dict | None = None,
+    ) -> None:
         super().__init__(message)
         self.message = message
+        self.details = details
         if status_code is not None:
             self.status_code = status_code
         if error_code is not None:
             self.error_code = error_code
 
-    def to_dict(self) -> dict[str, str]:
-        return {"detail": self.message, "code": self.error_code}
+    def to_dict(self) -> dict[str, str | dict]:
+        base: dict[str, str | dict] = {"detail": self.message, "code": self.error_code}
+        if self.details is not None:
+            base["details"] = self.details
+        return base
 
 
 class ValidationError(DomainError):
-    def __init__(self, message: str, code: str = "validation_error") -> None:
-        super().__init__(message, status_code=400, error_code=code)
+    def __init__(self, message: str, code: str = "validation_error", details: dict | None = None) -> None:
+        super().__init__(message, status_code=400, error_code=code, details=details)
 
 
 class UnauthorizedError(DomainError):

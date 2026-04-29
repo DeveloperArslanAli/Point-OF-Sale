@@ -22,7 +22,9 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -51,6 +53,63 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile
+    working_dir: /app
+    command: celery -A app.infrastructure.tasks.celery_app worker --loglevel=info --concurrency=4
+    environment:
+      ENV: dev
+      DEBUG: "true"
+      DATABASE_URL: "postgresql+asyncpg://postgres:1234@db:5432/retail_pos"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/1"
+      JWT_SECRET_KEY: dev-secret-change-me
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile
+    working_dir: /app
+    command: celery -A app.infrastructure.tasks.celery_app beat --loglevel=info
+    environment:
+      ENV: dev
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/1"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  flower:
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile
+    working_dir: /app
+    command: celery -A app.infrastructure.tasks.celery_app flower --port=5555
+    environment:
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/1"
+    ports:
+      - "5555:5555"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      redis:
+        condition: service_healthy
 
 volumes:
   postgres-data:
+  redis-data:

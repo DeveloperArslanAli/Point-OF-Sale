@@ -24,6 +24,15 @@ class AdminActionLogRepository:
             details=log.details,
             trace_id=log.trace_id,
             created_at=log.created_at,
+            # Enhanced audit fields
+            category=log.category,
+            severity=log.severity,
+            entity_type=log.entity_type,
+            entity_id=log.entity_id,
+            before_state=log.before_state,
+            after_state=log.after_state,
+            ip_address=log.ip_address,
+            user_agent=log.user_agent,
         )
         self._session.add(model)
         await self._session.flush()
@@ -31,11 +40,15 @@ class AdminActionLogRepository:
     async def search(
         self,
         *,
-        actor_user_id: str | None,
-        target_user_id: str | None,
-        action: str | None,
-        start: datetime | None,
-        end: datetime | None,
+        actor_user_id: str | None = None,
+        target_user_id: str | None = None,
+        action: str | None = None,
+        category: str | None = None,
+        severity: str | None = None,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
         params: PageParams,
     ) -> tuple[list[AdminActionLog], int]:
         stmt = select(AdminActionLogModel)
@@ -47,6 +60,14 @@ class AdminActionLogRepository:
             conditions.append(AdminActionLogModel.target_user_id == target_user_id)
         if action:
             conditions.append(AdminActionLogModel.action == action)
+        if category:
+            conditions.append(AdminActionLogModel.category == category)
+        if severity:
+            conditions.append(AdminActionLogModel.severity == severity)
+        if entity_type:
+            conditions.append(AdminActionLogModel.entity_type == entity_type)
+        if entity_id:
+            conditions.append(AdminActionLogModel.entity_id == entity_id)
         if start:
             conditions.append(AdminActionLogModel.created_at >= start)
         if end:
@@ -66,6 +87,21 @@ class AdminActionLogRepository:
         total = total_result.scalar_one()
         return items, total
 
+    async def get_security_events(
+        self,
+        *,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        params: PageParams,
+    ) -> tuple[list[AdminActionLog], int]:
+        """Get security-related audit events (high/critical severity)."""
+        return await self.search(
+            category="security",
+            start=start,
+            end=end,
+            params=params,
+        )
+
     @staticmethod
     def _to_domain(model: AdminActionLogModel) -> AdminActionLog:
         return AdminActionLog(
@@ -76,4 +112,12 @@ class AdminActionLogRepository:
             details=model.details or {},
             trace_id=model.trace_id,
             created_at=model.created_at,
+            category=model.category,
+            severity=model.severity,
+            entity_type=model.entity_type,
+            entity_id=model.entity_id,
+            before_state=model.before_state or {},
+            after_state=model.after_state or {},
+            ip_address=model.ip_address,
+            user_agent=model.user_agent,
         )

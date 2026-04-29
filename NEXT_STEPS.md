@@ -3,6 +3,8 @@
 This document complements the scaffold and highlights prioritized upcoming tasks derived from the architecture plan.
 
 ## Recently Completed
+- **Phase 11 Real-Time Communication (December 2025):** WebSocket infrastructure with JWT auth, ConnectionManager (tenant/user/role aware), EventDispatcher (Redis pub/sub), 18 event types, 3 event handlers (Sales, Inventory, Presence), integrated with Sales/Inventory/Products endpoints. Live updates for sales, inventory alerts, price changes, and user presence.
+- **Phase 18 Async Job Processing (December 2025):** Celery + Redis infrastructure, async product imports, report generation, email notifications, scheduled maintenance tasks (token cleanup, daily reports), Flower monitoring UI, 15 health check endpoints.
 - Phase 10 Cashier Workflow: Implemented strict RBAC with separate layouts (Full Screen POS for Cashiers).
 - Phase 10 Cashier Workflow: Implemented RBAC in Frontend (hiding Admin views for Cashiers).
 - Phase 10 Cashier Workflow: Added "Create User Account" (with Role selection) to Employee Management for streamlined onboarding.
@@ -27,15 +29,14 @@ This document complements the scaffold and highlights prioritized upcoming tasks
 - Admin lifecycle endpoints (activate/deactivate/role/password reset) added behind admin-only routes with optimistic locking and test coverage.
 
 ## High-Priority (Next Iterations)
-1. Auth subsystem hardening:
+1. **Phase 12 Advanced POS Features:** Payment integrations (Stripe/PayPal), split payments, gift cards, discounts, promotions engine.
+2. **Phase 14 Advanced Reporting:** Custom report builder, scheduled reports (daily/weekly/monthly), export to PDF/Excel, data visualization.
+3. **Phase 13 Customer Loyalty:** Points system, tier management, reward redemption, campaign engine.
+4. Auth subsystem hardening:
    - Tie audit log view into future trace/observability dashboards and document operations runbooks
    - Evaluate lockout/throttling policy for repeated login failures
-2. Customer insight follow-through: expose summary metrics in the desktop client and record acceptance feedback.
-3. Customer insight follow-through: expose summary metrics in the desktop client and record acceptance feedback.
-4. Supplier insights desktop integration: consume the new summary fields, add dashboards, and align with finance reporting needs.
-5. Phase 2 catalog expansion: extend `/products` list contract (sorting presets, richer DTO), wire desktop browse view.
-6. Domain events base + in-process dispatcher to propagate product import/sync signals.
-7. Docker image build/push pipeline with smoke deploy once service hardened.
+5. Customer insight follow-through: expose summary metrics in the desktop client and record acceptance feedback.
+6. Supplier insights desktop integration: consume the new summary fields, add dashboards, and align with finance reporting needs.
 
 ## Medium-Term
 - Inventory movement ledger & stock projection service.

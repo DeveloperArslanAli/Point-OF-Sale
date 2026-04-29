@@ -9,14 +9,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.application.sales.ports import CustomerSalesSummary, SalesRepository
+from app.core.tenant import get_current_tenant_id
 from app.domain.common.money import Money
-from app.domain.sales import Sale, SaleItem
+from app.domain.sales import Sale, SaleItem, SalePayment
 from app.infrastructure.db.models.sale_model import SaleItemModel, SaleModel
+from app.infrastructure.db.models.sale_payment_model import SalePaymentModel
 
 
 class SqlAlchemySalesRepository(SalesRepository):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    def _apply_tenant_filter(self, stmt):
+        """Apply tenant filter if context is set."""
+        tenant_id = get_current_tenant_id()
+        if tenant_id and hasattr(SaleModel, "tenant_id"):
+            return stmt.where(SaleModel.tenant_id == tenant_id)
+        return stmt
 
     async def add_sale(self, sale: Sale, items: Sequence[SaleItem]) -> None:
         if not items:
@@ -25,6 +34,7 @@ class SqlAlchemySalesRepository(SalesRepository):
         created_at = sale.created_at
         closed_at = sale.closed_at
         item_timestamp = closed_at or created_at or datetime.now(UTC)
+        tenant_id = get_current_tenant_id()
 
         sale_model = SaleModel(
             id=sale.id,
@@ -34,6 +44,8 @@ class SqlAlchemySalesRepository(SalesRepository):
             created_at=created_at,
             closed_at=closed_at,
             customer_id=sale.customer_id,
+            shift_id=sale.shift_id,
+            tenant_id=tenant_id,  # Set tenant from context
             items=[
                 SaleItemModel(
                     id=item.id,
@@ -45,12 +57,35 @@ class SqlAlchemySalesRepository(SalesRepository):
                 )
                 for item in items
             ],
+            payment_allocations=[
+                SalePaymentModel(
+                    id=payment.id,
+                    sale_id=sale.id,
+                    payment_method=payment.payment_method,
+                    amount=payment.amount.amount,
+                    currency=payment.amount.currency,
+                    reference_number=payment.reference_number,
+                    card_last_four=payment.card_last_four,
+                    gift_card_id=payment.gift_card_id,
+                    gift_card_code=payment.gift_card_code,
+                    created_at=payment.created_at,
+                )
+                for payment in sale.payments
+            ],
         )
         self._session.add(sale_model)
         await self._session.flush()
 
     async def get_by_id(self, sale_id: str) -> Sale | None:
-        stmt = select(SaleModel).options(selectinload(SaleModel.items)).where(SaleModel.id == sale_id)
+        stmt = (
+            select(SaleModel)
+            .options(
+                selectinload(SaleModel.items),
+                selectinload(SaleModel.payment_allocations),
+            )
+            .where(SaleModel.id == sale_id)
+        )
+        stmt = self._apply_tenant_filter(stmt)
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
         if model is None:
@@ -66,8 +101,19 @@ class SqlAlchemySalesRepository(SalesRepository):
         offset: int = 0,
         limit: int = 20,
     ) -> tuple[Sequence[Sale], int]:
-        stmt = select(SaleModel).options(selectinload(SaleModel.items)).order_by(SaleModel.created_at.desc())
+        stmt = (
+            select(SaleModel)
+            .options(
+                selectinload(SaleModel.items),
+                selectinload(SaleModel.payment_allocations),
+            )
+            .order_by(SaleModel.created_at.desc())
+        )
         count_stmt = select(func.count(SaleModel.id))
+        
+        # Apply tenant filter
+        stmt = self._apply_tenant_filter(stmt)
+        count_stmt = self._apply_tenant_filter(count_stmt)
 
         if customer_id is not None:
             stmt = stmt.where(SaleModel.customer_id == customer_id)
@@ -154,6 +200,7 @@ class SqlAlchemySalesRepository(SalesRepository):
             created_at=model.created_at,
             closed_at=model.closed_at,
             customer_id=model.customer_id,
+            shift_id=model.shift_id,
         )
         items: list[SaleItem] = []
         for item_model in model.items:
@@ -166,4 +213,19 @@ class SqlAlchemySalesRepository(SalesRepository):
             )
             items.append(item)
         sale.items.extend(items)
+
+        payments: list[SalePayment] = []
+        for payment_model in model.payment_allocations:
+            payment = SalePayment(
+                id=payment_model.id,
+                payment_method=payment_model.payment_method,
+                amount=Money(payment_model.amount, sale.currency),
+                reference_number=payment_model.reference_number,
+                card_last_four=payment_model.card_last_four,
+                gift_card_id=payment_model.gift_card_id,
+                gift_card_code=payment_model.gift_card_code,
+                created_at=payment_model.created_at,
+            )
+            payments.append(payment)
+        sale.payments.extend(payments)
         return sale

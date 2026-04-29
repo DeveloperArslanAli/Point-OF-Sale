@@ -2,11 +2,17 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING, List
 
 from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.db.session import Base
+# Runtime import to ensure relationship target is registered when mappers are configured
+from app.infrastructure.db.models.receiving_model import PurchaseOrderReceivingModel  # noqa: F401
+
+if TYPE_CHECKING:
+    from app.infrastructure.db.models.receiving_model import PurchaseOrderReceivingModel
 
 
 class PurchaseOrderModel(Base):
@@ -24,9 +30,16 @@ class PurchaseOrderModel(Base):
     total_quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    tenant_id: Mapped[str | None] = mapped_column(String(26), nullable=True, index=True)
 
     items: Mapped[list[PurchaseOrderItemModel]] = relationship(
         "PurchaseOrderItemModel",
+        back_populates="purchase_order",
+        cascade="all, delete-orphan",
+    )
+    
+    receivings: Mapped[List["PurchaseOrderReceivingModel"]] = relationship(
+        "PurchaseOrderReceivingModel",
         back_populates="purchase_order",
         cascade="all, delete-orphan",
     )

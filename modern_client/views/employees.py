@@ -171,6 +171,19 @@ class EmployeesView(ft.Container):
 
         def save(e):
             try:
+                required_fields = [first_name.value, last_name.value, email.value, position.value]
+                missing_basic = any(not v or not str(v).strip() for v in required_fields)
+                missing_hire = not hire_date.value or not str(hire_date.value).strip()
+                if missing_basic or missing_hire:
+                    self.page.show_snack_bar(ft.SnackBar(content=ft.Text("First, last, email, position, and hire date are required")))
+                    return
+
+                try:
+                    salary_value = float(base_salary.value) if base_salary.value else 0
+                except ValueError:
+                    self.page.show_snack_bar(ft.SnackBar(content=ft.Text("Base salary must be a number")))
+                    return
+
                 data = {
                     "first_name": first_name.value,
                     "last_name": last_name.value,
@@ -178,7 +191,7 @@ class EmployeesView(ft.Container):
                     "phone": phone.value,
                     "position": position.value,
                     "hire_date": hire_date.value,
-                    "base_salary": float(base_salary.value) if base_salary.value else 0,
+                    "base_salary": salary_value,
                     "create_user_account": create_user_checkbox.value
                 }
                 
@@ -195,9 +208,18 @@ class EmployeesView(ft.Container):
                     self._load_data()
                     self.page.update()
                 else:
-                    self.page.show_snack_bar(ft.SnackBar(content=ft.Text("Error adding employee")))
+                    status = api_service.last_error_status
+                    error_msg = api_service.last_error_message or "Error adding employee"
+                    if status == 409:
+                        error_msg = "Employee with this email already exists (409)"
+                    self.page.show_snack_bar(ft.SnackBar(content=ft.Text(error_msg)))
             except Exception as ex:
                 self.page.show_snack_bar(ft.SnackBar(content=ft.Text(f"Error: {str(ex)}")))
+
+        def close_dialog(_):
+            dlg.open = False
+            self.page.dialog = None
+            self.page.update()
 
         dlg = ft.AlertDialog(
             title=ft.Text("Add Employee"),
@@ -214,7 +236,7 @@ class EmployeesView(ft.Container):
                 width=450
             ),
             actions=[
-                ft.TextButton("Cancel", on_click=lambda e: setattr(dlg, 'open', False)),
+                ft.TextButton("Cancel", on_click=close_dialog),
                 ft.ElevatedButton("Save", on_click=save, bgcolor="#bb86fc", color="black"),
             ],
             bgcolor="#1a1c1e",
@@ -224,8 +246,60 @@ class EmployeesView(ft.Container):
         self.page.update()
 
     def _open_edit_dialog(self, emp):
-        # Placeholder for edit dialog
-        pass
+        first_name = ft.TextField(label="First Name", value=emp.get("first_name", ""), bgcolor="#2d3033", color="white", border_color="#bb86fc", width=400)
+        last_name = ft.TextField(label="Last Name", value=emp.get("last_name", ""), bgcolor="#2d3033", color="white", border_color="#bb86fc", width=400)
+        email = ft.TextField(label="Email", value=emp.get("email", ""), bgcolor="#2d3033", color="white", border_color="#bb86fc", width=400)
+        phone = ft.TextField(label="Phone", value=emp.get("phone") or "", bgcolor="#2d3033", color="white", border_color="#bb86fc", width=400)
+        position = ft.TextField(label="Position", value=emp.get("position", ""), bgcolor="#2d3033", color="white", border_color="#bb86fc", width=400)
+        active_switch = ft.Switch(label="Active", value=emp.get("is_active", True), active_color="#03dac6")
+
+        def save(e):
+            required_fields = [first_name.value, last_name.value, email.value, position.value]
+            if any(not v or not str(v).strip() for v in required_fields):
+                self.page.show_snack_bar(ft.SnackBar(content=ft.Text("First, last, email, and position are required")))
+                return
+
+            payload = {
+                "first_name": first_name.value,
+                "last_name": last_name.value,
+                "email": email.value,
+                "phone": phone.value,
+                "position": position.value,
+                "is_active": active_switch.value,
+            }
+
+            if api_service.update_employee(emp["id"], payload):
+                self.page.show_snack_bar(ft.SnackBar(content=ft.Text("Employee updated")))
+                dlg.open = False
+                self._load_data()
+                self.page.update()
+            else:
+                error_msg = api_service.last_error_message or "Error updating employee"
+                self.page.show_snack_bar(ft.SnackBar(content=ft.Text(error_msg)))
+
+        def close_dialog(_):
+            dlg.open = False
+            self.page.dialog = None
+            self.page.update()
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Edit Employee"),
+            content=ft.Column(
+                [first_name, last_name, email, phone, position, active_switch],
+                tight=True,
+                scroll=ft.ScrollMode.AUTO,
+                height=450,
+                width=450,
+            ),
+            actions=[
+                ft.TextButton("Cancel", on_click=close_dialog),
+                ft.ElevatedButton("Save", on_click=save, bgcolor="#bb86fc", color="black"),
+            ],
+            bgcolor="#1a1c1e",
+        )
+        self.page.dialog = dlg
+        dlg.open = True
+        self.page.update()
 
     def _open_financial_dialog(self, emp):
         history = api_service.get_financial_history(emp['id'])
@@ -321,11 +395,15 @@ class EmployeesView(ft.Container):
                 except Exception as ex:
                     self.page.show_snack_bar(ft.SnackBar(content=ft.Text(f"Error: {str(ex)}")))
 
+            def close_inc(_):
+                inc_dlg.open = False
+                self.page.update()
+
             inc_dlg = ft.AlertDialog(
                 title=ft.Text("Grant Increment"),
                 content=ft.Column([new_salary, reason, date_field], tight=True, scroll=ft.ScrollMode.AUTO, width=450),
                 actions=[
-                    ft.TextButton("Cancel", on_click=lambda e: setattr(inc_dlg, 'open', False)),
+                    ft.TextButton("Cancel", on_click=close_inc),
                     ft.ElevatedButton("Save", on_click=save_inc, bgcolor="#bb86fc", color="black"),
                 ],
                 bgcolor="#1a1c1e",
@@ -379,11 +457,15 @@ class EmployeesView(ft.Container):
                 except Exception as ex:
                     self.page.show_snack_bar(ft.SnackBar(content=ft.Text(f"Error: {str(ex)}")))
 
+            def close_bonus(_):
+                bonus_dlg.open = False
+                self.page.update()
+
             bonus_dlg = ft.AlertDialog(
                 title=ft.Text("Award Bonus"),
                 content=ft.Column([amount, reason, date_field], tight=True, scroll=ft.ScrollMode.AUTO, width=450),
                 actions=[
-                    ft.TextButton("Cancel", on_click=lambda e: setattr(bonus_dlg, 'open', False)),
+                    ft.TextButton("Cancel", on_click=close_bonus),
                     ft.ElevatedButton("Save", on_click=save_bonus, bgcolor="#bb86fc", color="black"),
                 ],
                 bgcolor="#1a1c1e",
@@ -411,7 +493,7 @@ class EmployeesView(ft.Container):
                 )
             ], width=600, height=500),
             actions=[
-                ft.TextButton("Close", on_click=lambda e: setattr(dlg, 'open', False)),
+                ft.TextButton("Close", on_click=lambda e: (setattr(dlg, 'open', False), self.page.update())),
             ],
             bgcolor="#1a1c1e",
         )

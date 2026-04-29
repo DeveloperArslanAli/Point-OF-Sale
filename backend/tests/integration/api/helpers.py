@@ -6,13 +6,15 @@ from app.application.auth.use_cases.create_user import CreateUserInput, CreateUs
 from app.domain.auth.entities import UserRole
 from app.infrastructure.auth.password_hasher import PasswordHasher
 from app.infrastructure.db.repositories.user_repository import UserRepository
+from app.infrastructure.db.session import async_session_factory
 
 
 async def create_user(async_session, email: str, password: str, role: UserRole) -> None:
     """Seed a user directly via the application layer with the desired role."""
-    use_case = CreateUserUseCase(UserRepository(async_session), PasswordHasher())
-    await use_case.execute(CreateUserInput(email=email, password=password, role=role))
-    await async_session.commit()
+    _ = async_session  # the fixture keeps DB configured; creation uses an isolated session
+    async with async_session_factory.begin() as session:
+        use_case = CreateUserUseCase(UserRepository(session), PasswordHasher())
+        await use_case.execute(CreateUserInput(email=email, password=password, role=role))
 
 
 async def create_user_and_login(async_session, client, email: str, password: str, role: UserRole) -> str:

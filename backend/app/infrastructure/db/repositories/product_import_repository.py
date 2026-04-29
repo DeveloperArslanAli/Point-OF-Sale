@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Any, Sequence
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.application.catalog.ports import ProductImportJobRepository
+from app.core.tenant import get_current_tenant_id
 from app.domain.catalog.import_job import ImportStatus, ProductImportItem, ProductImportJob
 from app.infrastructure.db.models.product_import_job_model import (
     ProductImportItemModel,
@@ -18,9 +19,18 @@ class SqlAlchemyProductImportJobRepository(ProductImportJobRepository):
     def __init__(self, session: AsyncSession):
         self._session = session
 
+    def _apply_tenant_filter(self, stmt: Select[Any]) -> Select[Any]:
+        """Apply tenant filter if context is set."""
+        tenant_id = get_current_tenant_id()
+        if tenant_id:
+            return stmt.where(ProductImportJobModel.tenant_id == tenant_id)
+        return stmt
+
     async def add_job(self, job: ProductImportJob, items: Sequence[ProductImportItem]) -> None:
+        tenant_id = get_current_tenant_id()
         job_model = ProductImportJobModel(
             id=job.id,
+            tenant_id=tenant_id,
             original_filename=job.original_filename,
             status=job.status.value,
             total_rows=job.total_rows,
@@ -45,6 +55,7 @@ class SqlAlchemyProductImportJobRepository(ProductImportJobRepository):
 
     async def get_job(self, job_id: str) -> ProductImportJob | None:
         stmt = select(ProductImportJobModel).where(ProductImportJobModel.id == job_id)
+        stmt = self._apply_tenant_filter(stmt)
         res = await self._session.execute(stmt)
         model = res.scalar_one_or_none()
         if model is None:
@@ -70,6 +81,7 @@ class SqlAlchemyProductImportJobRepository(ProductImportJobRepository):
             .where(ProductImportJobModel.id == job_id)
             .options(selectinload(ProductImportJobModel.items))
         )
+        stmt = self._apply_tenant_filter(stmt)
         res = await self._session.execute(stmt)
         model = res.scalar_one_or_none()
         if model is None:
@@ -133,6 +145,12 @@ class SqlAlchemyProductImportJobRepository(ProductImportJobRepository):
     ) -> tuple[Sequence[ProductImportJob], int]:
         stmt = select(ProductImportJobModel).order_by(ProductImportJobModel.created_at.desc())
         count_stmt = select(func.count(ProductImportJobModel.id))
+        
+        # Apply tenant filter
+        stmt = self._apply_tenant_filter(stmt)
+        tenant_id = get_current_tenant_id()
+        if tenant_id:
+            count_stmt = count_stmt.where(ProductImportJobModel.tenant_id == tenant_id)
 
         if status is not None:
             stmt = stmt.where(ProductImportJobModel.status == status.value)

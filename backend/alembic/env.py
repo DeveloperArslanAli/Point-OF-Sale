@@ -11,6 +11,7 @@ from app.infrastructure.db.models import (
     product_model,  # noqa: F401 ensure product table metadata loaded
     tenant_model,
     subscription_plan_model,
+    supplier_ranking_weights_model,  # noqa: F401 supplier ranking weights
 )
 from app.infrastructure.db.models.auth import (
     user_model,  # noqa: F401 ensure user table metadata loaded

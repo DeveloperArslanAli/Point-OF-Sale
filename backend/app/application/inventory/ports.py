@@ -25,3 +25,7 @@ class InventoryMovementRepository(Protocol):
     ) -> StockLevel: ...  # pragma: no cover
 
     async def get_last_movement_at(self, product_id: str) -> datetime | None: ...  # pragma: no cover
+
+    async def get_outflow_since(self, product_id: str, since: datetime) -> int: ...  # pragma: no cover
+
+    async def get_outflows_since(self, since: datetime) -> dict[str, int]: ...  # pragma: no cover

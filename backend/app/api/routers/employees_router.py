@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies.auth import ADMIN_ROLE, MANAGEMENT_ROLES, require_roles
 from app.infrastructure.db.session import get_session
 from app.shared.pagination import Page, PageParams
+from app.domain.common.errors import ConflictError
+from app.domain.common.errors import DomainError
 from app.api.schemas.employee import (
     BonusCreate,
     BonusOut,
@@ -35,6 +37,9 @@ async def create_employee(
     _: User = Depends(require_roles(*ADMIN_ROLE)),
 ) -> EmployeeOut:
     repo = SqlAlchemyEmployeeRepository(session)
+    existing = await repo.get_by_email(payload.email)
+    if existing:
+        raise ConflictError("Employee with this email already exists")
     
     # Check if user creation is requested and validate
     if payload.create_user_account:
@@ -60,19 +65,26 @@ async def create_employee(
         user_repo = UserRepository(session)
         hasher = PasswordHasher()
         use_case = CreateUserUseCase(user_repo, hasher)
-        
+
         try:
-            # Ensure role is uppercase for Enum
             role_enum = UserRole(payload.role.upper())
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid role: {payload.role}")
+
+        try:
             await use_case.execute(
                 CreateUserInput(
                     email=payload.email,
                     password=payload.password,  # type: ignore
-                    role=role_enum
+                    role=role_enum,
                 )
             )
-        except ValueError:
-             raise HTTPException(status_code=400, detail=f"Invalid role: {payload.role}")
+        except ConflictError:
+            # Let domain conflict bubble to middleware for a 409 response
+            raise
+        except DomainError:
+            # Preserve domain errors (e.g., validation) for middleware handling
+            raise
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Failed to create user account: {str(e)}")
 
@@ -119,6 +131,11 @@ async def update_employee(
     employee = await repo.get_by_id(employee_id)
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
+
+    if payload.email and payload.email != employee.email:
+        duplicate = await repo.get_by_email(payload.email)
+        if duplicate:
+            raise ConflictError("Employee with this email already exists")
         
     employee.update(
         first_name=payload.first_name,

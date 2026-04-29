@@ -1,0 +1,92 @@
+version: 2
+
+updates:
+  # Python dependencies - Backend
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+      - "python"
+    reviewers:
+      - "maintainers"
+    groups:
+      fastapi:
+        patterns:
+          - "fastapi*"
+          - "starlette*"
+          - "uvicorn*"
+      sqlalchemy:
+        patterns:
+          - "sqlalchemy*"
+          - "alembic*"
+          - "asyncpg*"
+      testing:
+        patterns:
+          - "pytest*"
+          - "coverage*"
+          - "faker*"
+      linting:
+        patterns:
+          - "ruff*"
+          - "mypy*"
+          - "bandit*"
+
+  # Python dependencies - Modern Client
+  - package-ecosystem: "pip"
+    directory: "/modern_client"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+      - "python"
+      - "client"
+
+  # Python dependencies - Super Admin Client
+  - package-ecosystem: "pip"
+    directory: "/super_admin_client"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+      - "python"
+      - "admin"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci(deps)"
+    labels:
+      - "dependencies"
+      - "ci"
+
+  # Docker dependencies
+  - package-ecosystem: "docker"
+    directory: "/backend/docker"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "chore(docker)"
+    labels:
+      - "dependencies"
+      - "docker"

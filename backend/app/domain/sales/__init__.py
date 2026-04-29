@@ -1,3 +1,3 @@
-from .entities import Sale, SaleItem
+from .entities import Sale, SaleItem, SalePayment
 
-__all__ = ["Sale", "SaleItem"]
+__all__ = ["Sale", "SaleItem", "SalePayment"]

@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7
     JWT_ALGORITHM: str = "HS256"
     JWT_SECRET_KEY: str = _DEFAULT_SECRET_SENTINEL
+    # Used for field-level encryption (defaults to JWT secret when not set)
+    SECRET_KEY: str = _DEFAULT_SECRET_SENTINEL
     JWT_ISSUER: str = "retail-pos"
 
     # CORS / Hosts
@@ -49,8 +51,42 @@ class Settings(BaseSettings):
     # Observability (placeholders)
     ENABLE_TRACING: bool = False
 
+    # Inventory / sales behavior
+    ENFORCE_STOCK_ON_SALE: bool = False
+
     # Cache
     REDIS_URL: str = "redis://localhost:6379/0"
+    
+    # Celery Configuration
+    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
+
+    # Alerting
+    ALERT_COOLDOWN_MINUTES: int = 5
+    
+    # Email/SMTP Configuration (optional)
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int = 587
+    SMTP_USER: str | None = None
+    SMTP_PASSWORD: str | None = None
+    SMTP_FROM_EMAIL: str = "noreply@retailpos.local"
+    SMTP_FROM_NAME: str = "Retail POS System"
+    
+    # Payment Provider Configuration
+    STRIPE_SECRET_KEY: str | None = None
+    STRIPE_PUBLISHABLE_KEY: str | None = None
+    STRIPE_WEBHOOK_SECRET: str | None = None
+    PAYMENT_CURRENCY: str = "USD"  # Default currency for payments
+    
+    # Security - IP Allowlisting
+    IP_ALLOWLIST: str = ""  # Comma-separated list of allowed IPs/CIDRs for admin endpoints
+    
+    # Observability - OpenTelemetry
+    OTEL_ENABLED: bool = False
+    OTEL_SERVICE_NAME: str = "retail-pos-backend"
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://localhost:4317"
+    OTEL_EXPORTER_OTLP_PROTOCOL: str = "grpc"  # grpc or http/protobuf
+    SENTRY_DSN: str | None = None
 
     @property
     def database_echo(self) -> bool:
@@ -85,8 +121,16 @@ class Settings(BaseSettings):
                 raise ValueError("ALLOWED_HOSTS cannot contain '*' outside dev/test")
             if self.JWT_SECRET_KEY == self._DEFAULT_SECRET_SENTINEL:
                 raise ValueError("JWT_SECRET_KEY must be overridden for staging/prod environments")
+            if self.SECRET_KEY == self._DEFAULT_SECRET_SENTINEL:
+                raise ValueError("SECRET_KEY must be set for staging/prod environments")
             if self.DATABASE_URL.startswith("sqlite+"):
                 raise ValueError("DATABASE_URL must point to Postgres in staging/prod environments")
+            if "ENFORCE_STOCK_ON_SALE" not in self.model_fields_set:
+                object.__setattr__(self, "ENFORCE_STOCK_ON_SALE", True)
+
+        # Backwards compatibility: if SECRET_KEY not provided, reuse JWT secret
+        if self.SECRET_KEY == self._DEFAULT_SECRET_SENTINEL and self.JWT_SECRET_KEY != self._DEFAULT_SECRET_SENTINEL:
+            object.__setattr__(self, "SECRET_KEY", self.JWT_SECRET_KEY)
         return self
 
 

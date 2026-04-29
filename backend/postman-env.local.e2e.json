@@ -1,0 +1,25 @@
+{
+  "id": "local-env-e2e-uuid-placeholder",
+  "name": "Local (E2E Suite)",
+  "values": [
+    {"key": "baseUrl", "value": "http://localhost:8010", "enabled": true},
+
+    {"key": "adminEmail", "value": "admin@retailpos.com", "enabled": true},
+    {"key": "adminPassword", "value": "AdminPass123!", "enabled": true},
+
+    {"key": "accessToken", "value": "", "enabled": true},
+
+    {"key": "category_id", "value": "", "enabled": true},
+    {"key": "product_id", "value": "", "enabled": true},
+    {"key": "customer_id", "value": "", "enabled": true},
+    {"key": "supplier_id", "value": "", "enabled": true},
+    {"key": "employee_id", "value": "", "enabled": true},
+
+    {"key": "sale_id", "value": "", "enabled": true},
+    {"key": "sale_item_id", "value": "", "enabled": true},
+    {"key": "return_id", "value": "", "enabled": true}
+  ],
+  "_postman_variable_scope": "environment",
+  "_postman_exported_at": "2025-12-18T00:00:00Z",
+  "_postman_exported_using": "github-copilot"
+}

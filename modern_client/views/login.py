@@ -64,7 +64,7 @@ class LoginView(ft.Container):
         result = api_service.login(self.email_field.value, self.password_field.value)
         
         if result and "access_token" in result:
-            api_service.set_token(result["access_token"])
+            api_service.set_tokens(result.get("access_token"), result.get("refresh_token"))
             self.app.login(result["access_token"])
         else:
             self.error_text.value = "Login failed. Check credentials."

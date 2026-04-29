@@ -35,10 +35,5 @@ class LoginView(ft.Container):
             api_client.set_token(token)
             self.app.login(token)
         else:
-            self.error_text.value = f"Login failed. Check credentials or server connection."
-            self.update()
-                self.error_text.value = "Invalid credentials"
-                self.update()
-        except Exception as ex:
-            self.error_text.value = f"Connection error: {ex}"
+            self.error_text.value = "Login failed. Check credentials or server connection."
             self.update()

@@ -3,8 +3,11 @@ from __future__ import annotations
 from typing import Sequence
 
 from sqlalchemy import desc, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.tenant import get_current_tenant_id
+from app.domain.common.errors import ConflictError
 from app.domain.common.money import Money
 from app.domain.employees.entities import Employee, EmployeeBonus, SalaryHistory
 from app.domain.employees.repositories import EmployeeRepository
@@ -19,7 +22,15 @@ class SqlAlchemyEmployeeRepository(EmployeeRepository):
     def __init__(self, session: AsyncSession):
         self._session = session
 
+    def _apply_tenant_filter(self, stmt):
+        """Apply tenant filter if context is set."""
+        tenant_id = get_current_tenant_id()
+        if tenant_id and hasattr(EmployeeModel, "tenant_id"):
+            return stmt.where(EmployeeModel.tenant_id == tenant_id)
+        return stmt
+
     async def add(self, employee: Employee) -> None:
+        tenant_id = get_current_tenant_id()
         model = EmployeeModel(
             id=employee.id,
             first_name=employee.first_name,
@@ -32,12 +43,24 @@ class SqlAlchemyEmployeeRepository(EmployeeRepository):
             is_active=employee.is_active,
             created_at=employee.created_at,
             updated_at=employee.updated_at,
+            tenant_id=tenant_id,
         )
-        self._session.add(model)
-        await self._session.flush()
+        try:
+            self._session.add(model)
+            await self._session.flush()
+        except IntegrityError as exc:
+            raise ConflictError("Employee with this email already exists") from exc
+
+    async def get_by_email(self, email: str) -> Employee | None:
+        stmt = select(EmployeeModel).where(EmployeeModel.email == email)
+        stmt = self._apply_tenant_filter(stmt)
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        return self._to_entity(model) if model else None
 
     async def get_by_id(self, employee_id: str) -> Employee | None:
         stmt = select(EmployeeModel).where(EmployeeModel.id == employee_id)
+        stmt = self._apply_tenant_filter(stmt)
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
         return self._to_entity(model) if model else None
@@ -50,6 +73,9 @@ class SqlAlchemyEmployeeRepository(EmployeeRepository):
         search: str | None = None,
     ) -> tuple[list[Employee], int]:
         query = select(EmployeeModel)
+        
+        # Apply tenant filter
+        query = self._apply_tenant_filter(query)
         
         if active is not None:
             query = query.where(EmployeeModel.is_active == active)
@@ -77,9 +103,10 @@ class SqlAlchemyEmployeeRepository(EmployeeRepository):
 
     async def update(self, employee: Employee) -> None:
         stmt = select(EmployeeModel).where(EmployeeModel.id == employee.id)
+        stmt = self._apply_tenant_filter(stmt)
         result = await self._session.execute(stmt)
         model = result.scalar_one()
-        
+
         model.first_name = employee.first_name
         model.last_name = employee.last_name
         model.email = employee.email
@@ -88,8 +115,11 @@ class SqlAlchemyEmployeeRepository(EmployeeRepository):
         model.base_salary = employee.base_salary.amount
         model.is_active = employee.is_active
         model.updated_at = employee.updated_at
-        
-        await self._session.flush()
+
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            raise ConflictError("Employee with this email already exists") from exc
 
     async def add_bonus(self, bonus: EmployeeBonus) -> None:
         model = EmployeeBonusModel(

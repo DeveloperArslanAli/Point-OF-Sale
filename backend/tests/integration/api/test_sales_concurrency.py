@@ -1,7 +1,12 @@
 import asyncio
 import pytest
 from decimal import Decimal
-from app.application.sales.use_cases.record_sale import RecordSaleUseCase, RecordSaleInput, SaleLineInput
+from app.application.sales.use_cases.record_sale import (
+    RecordSaleUseCase,
+    RecordSaleInput,
+    SaleLineInput,
+    SalePaymentInput,
+)
 from app.infrastructure.db.repositories.inventory_repository import SqlAlchemyProductRepository
 from app.infrastructure.db.repositories.sales_repository import SqlAlchemySalesRepository
 from app.infrastructure.db.repositories.inventory_movement_repository import SqlAlchemyInventoryMovementRepository
@@ -56,7 +61,10 @@ async def test_concurrent_sales_stock_check(async_session):
             
             use_case = RecordSaleUseCase(p_repo, s_repo, i_repo)
             input_data = RecordSaleInput(
-                lines=[SaleLineInput(product_id=product.id, quantity=1, unit_price=Decimal("10.00"))]
+                lines=[SaleLineInput(product_id=product.id, quantity=1, unit_price=Decimal("10.00"))],
+                payments=[
+                    SalePaymentInput(payment_method="cash", amount=Decimal("10.00"))
+                ],
             )
             try:
                 await use_case.execute(input_data)

@@ -24,11 +24,36 @@ class SaleModel(Base):
         nullable=True,
         index=True,
     )
+    shift_id: Mapped[str | None] = mapped_column(
+        String(26),
+        ForeignKey("shifts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    tenant_id: Mapped[str | None] = mapped_column(String(26), nullable=True, index=True)
 
     items: Mapped[list[SaleItemModel]] = relationship(
         "SaleItemModel",
         back_populates="sale",
         cascade="all, delete-orphan",
+    )
+    # Payment tracking from Phase 12.1 (Stripe integration)
+    payments: Mapped[list["PaymentModel"]] = relationship(
+        "PaymentModel",
+        back_populates="sale",
+        cascade="all, delete-orphan",
+    )
+    # Split payment allocations (Phase 12.4)
+    payment_allocations: Mapped[list["SalePaymentModel"]] = relationship(
+        "SalePaymentModel",
+        back_populates="sale",
+        cascade="all, delete-orphan",
+    )
+    # Shift linkage (Phase 12.6)
+    shift: Mapped["ShiftModel | None"] = relationship(
+        "ShiftModel",
+        back_populates="sales",
+        foreign_keys=[shift_id],
     )
 
 
