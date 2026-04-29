@@ -23,7 +23,7 @@ opencv-python = "^4.9.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.2"
-ruff = "^0.6.0"
+ruff = ">=0.6,<0.16"
 
 [build-system]
 requires = ["poetry-core"]
