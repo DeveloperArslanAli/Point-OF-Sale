@@ -8,7 +8,7 @@ package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.11"
-flet = "^0.21.0"
+flet = ">=0.21,<0.29"
 httpx = "^0.27.0"
 pydantic = "^2.8.0"
 python-dotenv = "^1.0.1"
